@@ -32,24 +32,24 @@ flowchart LR
   end
 
   subgraph Ingestion on k8s
-    C[Selenium Crawler\n(Deployments/Jobs)]
-    K[(Kafka\nraw_html, translations)]
+    C[Selenium Crawler Deployments/Jobs ]
+    K[Kafka raw_html, translations ]
   end
 
   subgraph Data Lake on k8s
-    H[(HDFS)]
-    I[Apache Iceberg\n(Bronze/Silver/Gold)]
+    H[ HDFS ]
+    I[Apache Iceberg Bronze/Silver/Gold ]
   end
 
   subgraph Processing on k8s
-    S1[PySpark Batch\n(Bronze->Silver->Gold)]
-    S2[Spark Structured Streaming\n(Kafka->Iceberg/NoSQL)]
-    GT[Translate Microservice\n(rate-limited)]
+    S1[PySpark Batch Bronze->Silver->Gold ]
+    S2[Spark Structured Streaming Kafka->Iceberg/NoSQL ]
+    GT[Translate Microservice rate-limited ]
   end
 
   subgraph Serving
-    N[(NoSQL)]
-    CH[(ClickHouse)]
+    N[NoSQL]
+    CH[ClickHouse]
     TR[Trino/Presto]
   end
 
