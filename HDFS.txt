@@ -1,0 +1,5 @@
+Source: What Is HDFS? | HDFS Architecture | HDFS Tutorial For Beginners | HDFS In Hadoop | Simplilearn
+Link: https://www.youtube.com/watch?v=nRX4_3qf3rc&list=PLEiEAq2VkUUJ9lec_aWb4BSigwVBfCIJE&index=1
+
+HDFS is a file system (like NTFS of Window). It have it's own architecture, characteristic and command line.
+HDFS can be view and used like NTFS by accessing "Hue File Browser".

@@ -1,0 +1,29 @@
+Source: Apache Cassandra Database – Full Course for Beginners
+link: https://www.youtube.com/watch?v=J-cSy5MeMOA
+
+Module 1: Cassandra Intro and Background
+
+1. Compares to relational Database
+    Application >>> Model >>> Data
+    Queries are king
+    Primary keys are more than just for uniqueness
+    Distributed Architecture
+    Availability & Partition Tolerence (in CAP theorem) instead of ACID
+    Denormalization instead or joinds and indexes
+    Referential Integrity not enforced 
+
+2. Terminology
+    data model
+    keyspace: container of table
+    table: rows x columns
+    partition:
+        data is stored based on partition
+    primary key: partition key
+        uniqueness
+        placement of the record in the cluster -> accessibility
+
+3. CQL Fundementals
+    Building Blocks: Keyspaces, Tables, Primary Keyspaces
+    CQL Commands: SELECT, TRUNCATE, ALTER TABLE, SOURCE
+
+4. Partitions
