@@ -27,3 +27,33 @@ Module 1: Cassandra Intro and Background
     CQL Commands: SELECT, TRUNCATE, ALTER TABLE, SOURCE
 
 4. Partitions
+    Partition Keys
+    Composite Partition Keys
+    Clustering Columns
+    
+
+Module 2: Cassandra Building Blocks
+
+1. Denormalization
+    Construct and store the <Result of Join command> in denomalized table.
+    No Join will be used later.
+
+2. Collections, User Defined Types, and Counters
+    Collection: Set, List, Map (like python Dictionary)
+        Groups and stores data together in a single columns
+        Collection columns are multi-valued columns
+        Designed to store a small amount of data
+        Retrieved in its entirety
+        Cannot be part of primary key, partition key or clustering column
+        Cannot nest a collection inside of another collection
+            Unless you use FROZEN keyword
+
+
+    User Defined Types (UDT)
+        A list of component types.
+        For example: CREATE TYPE full name ( first name text, last name text);
+
+    Counters
+        A dedicated type to use instead of COUNT ON in SQL
+
+Module 3: Data Modeling
