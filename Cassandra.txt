@@ -8,8 +8,8 @@ Module 1: Cassandra Intro and Background
     Queries are king
     Primary keys are more than just for uniqueness
     Distributed Architecture
-    Availability & Partition Tolerence (in CAP theorem) instead of ACID
-    Denormalization instead or joinds and indexes
+    Availability & Partition Tolerance (in CAP theorem) instead of ACID
+    Denormalization instead or joins and indexes
     Referential Integrity not enforced 
 
 2. Terminology
@@ -22,7 +22,7 @@ Module 1: Cassandra Intro and Background
         uniqueness
         placement of the record in the cluster -> accessibility
 
-3. CQL Fundementals
+3. CQL Fundamentals
     Building Blocks: Keyspaces, Tables, Primary Keyspaces
     CQL Commands: SELECT, TRUNCATE, ALTER TABLE, SOURCE
 
@@ -35,7 +35,7 @@ Module 1: Cassandra Intro and Background
 Module 2: Cassandra Building Blocks
 
 1. Denormalization
-    Construct and store the <Result of Join command> in denomalized table.
+    Construct and store the <Result of Join command> in denormalized table.
     No Join will be used later.
 
 2. Collections, User Defined Types, and Counters
@@ -57,3 +57,104 @@ Module 2: Cassandra Building Blocks
         A dedicated type to use instead of COUNT ON in SQL
 
 Module 3: Data Modeling
+(Following DataStax Modeling Methodology)
+
+1. Conceptual Data Model
+	Abstract view of domain
+	Technology independent
+	Not specific to any database system
+	(Which will then be normalized for SQL or further denormalized for no-SQL)
+
+	Cardinality: relationships between two entities (1-1, 1-n, m-n)
+
+	Relationship key: (1-1, 1-n, m-n)
+
+	Weak entity type: (composition relation)
+
+2. Workflow and Access Pattern
+	Tasks/causal dependencies form a graph
+	This create an access patterns that help determine: How data is accessed and What queries to run first
+
+3. Mapping Rules and Patterns
+	Why we need to follow mapping rules
+		Ensures the correctness of logical data model
+		Ensure each query has a corresponding table
+		Ensure queries are executed properly
+		Ensure data is returned in the correct order
+
+	Mapping Rules
+		Identify entities and their relationship
+		Identify the "equality search" attributes
+		Identify the "inequality search" attributes
+		Identify the "ordering" attributes
+		Identify the "key" attributes
+
+	Chebotko Diagram (database schema design)
+		Documents the logical and physical data model
+		Includes: Application Workflow, Table Diagrams, Query List and UDTs
+		In logical-level: shows column names and attributes
+		In physical-level: shows column data type (with type of column and some optimization if needed)
+
+	Principle of data modelling
+		Know your Data
+		Know your Queries
+		Nest Data
+		Duplicate Data
+	
+	
+	Key to successful database implementation
+		Preserve properties so that data is organized correctly
+		Space is sacrificed to reduce time
+		Define what is stored in database
+
+	Entity and relationship keys affect the table primary keys
+		Primary key uniquely identifies a row / entity / relationship
+
+	Query is the center of data modelling
+		Captured by application workflow models
+		Reduce the number of partitions that have to be read for a query result
+		Table schema design changes if queries change
+
+	Single Partition per Query
+		Most efficient access pattern
+		Query accesses only one partition to retrieve result
+
+	Multiple Partition per Query
+		Less efficient but not necessarily bad
+		Should be limited
+
+	Anti-pattern
+		(strictly avoid) Linear Search in all Partition to find an information
+
+4. Logical Data Model
+	Working rule of Cassandra: Group as much data as possible on disk
+		Data Nesting is the main data modeling technique
+		Organizes multiple entities into a single pertition
+		Supports partition per query data access
+
+	Scheme Design should be friven by application queries
+
+	Three data nesting mechanism:
+		Clustering columns
+			Primary nesting mechanism
+			Partition key identifies an entity that other entities will nest into
+			Values in clustering column identify the nested entities
+			Multiple clustering columns inplement multi-level nesting
+		Collection columns
+		UDT columns
+			Secondary nesting mechanism
+			Represent 1-1 relationship
+			Can use in conjuction with collection
+			Easier thatn working with multiple collection columns
+	Result
+		Data duplication
+		Cassandra join on write instead of join on read
+
+5. Physical Data Model
+	Created by adding data types to each column of Logical model
+	Also:
+		Optimize Efficiency
+		Partition size won't grow
+		Return queries quickly
+
+	
