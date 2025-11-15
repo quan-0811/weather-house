@@ -1,0 +1,26 @@
+# =============================================================================
+# SPARK PYTHON DEPENDENCIES
+# =============================================================================
+# These packages are installed in the Spark container for PySpark jobs
+
+# Core Spark
+pyspark==3.5.0
+
+# Kafka Integration
+kafka-python==2.0.2
+
+# Cassandra Integration
+cassandra-driver==3.29.0
+
+# Data Validation
+pydantic==2.5.0
+
+# Data Manipulation
+pandas==2.1.4
+numpy==1.26.2
+
+# HDFS Client
+hdfs==2.7.3
+
+# Date/Time Utilities
+python-dateutil==2.8.2

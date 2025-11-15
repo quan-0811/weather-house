@@ -12,32 +12,32 @@ done
 
 echo "All Kafka brokers are ready. Creating topics..."
 
-# Create weather-events topic (8 partitions, replication factor 3)
+# Create weather-events topic (3 partitions for 3 producers/consumers, replication factor 3)
 kafka-topics --create \
   --bootstrap-server localhost:9092 \
   --replication-factor 3 \
-  --partitions 8 \
+  --partitions 3 \
   --topic weather-events \
   --if-not-exists \
   --config retention.ms=604800000 \
   --config compression.type=snappy \
   --config min.insync.replicas=2
 
-# Create weather-alerts topic (5 partitions, replication factor 3)
+# Create weather-alerts topic (3 partitions, replication factor 3)
 kafka-topics --create \
   --bootstrap-server localhost:9092 \
   --replication-factor 3 \
-  --partitions 5 \
+  --partitions 3 \
   --topic weather-alerts \
   --if-not-exists \
   --config retention.ms=86400000 \
   --config min.insync.replicas=2
 
-# Create weather-aggregates topic (8 partitions, replication factor 3)
+# Create weather-aggregates topic (3 partitions, replication factor 3)
 kafka-topics --create \
   --bootstrap-server localhost:9092 \
   --replication-factor 3 \
-  --partitions 8 \
+  --partitions 3 \
   --topic weather-aggregates \
   --if-not-exists \
   --config retention.ms=604800000 \

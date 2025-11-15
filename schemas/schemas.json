@@ -1,0 +1,174 @@
+{
+    "id": {
+        "type": "string",
+        "description": "Weather Station ID"
+    },
+    "name": {
+        "type": "string",
+        "description": "Weather Station Name"
+    },
+    "region": {
+        "type": "string",
+        "description": "Geographical Region of the Weather Station"
+    },
+    "longitude": {
+        "type": "number",
+        "description": "Longitude of the Weather Station"
+    },
+    "latitude": {
+        "type": "number",
+        "description": "Latitude of the Weather Station"
+    },
+    "elevation": {
+        "type": "number",
+        "description": "Elevation of the Weather Station (m)"
+    },
+    "timezone": {
+        "type": "string",
+        "description": "Timezone of the Weather Station"
+    },
+    "timestamp": {
+        "type": "string",
+        "description": "Timestamp of the current weather data in ISO 8601 format"
+    },
+    "temperature_2m": {
+        "type": "number",
+        "description": "Current Temperature at 2 meters above ground (Celsius)"
+    },
+    "relative_humidity_2m": {
+        "type": "number",
+        "description": "Current Relative Humidity at 2 meters above ground (%)"
+    },
+    "dewpoint_2m": {
+        "type": "number",
+        "description": "Current Dew Point at 2 meters above ground (Celsius)"
+    },
+    "apparent_temperature": {
+        "type": "number",
+        "description": "Apparent temperature is the perceived feels-like temperature combining wind chill factor, relative humidity and solar radiation (Celsius)"
+    },
+    "pressure_msl": {
+        "type": "number",
+        "description": "Current Atmospheric Pressure at Mean Sea Level (hPa)"
+    },
+    "surface_pressure": {
+        "type": "number",
+        "description": "Current Surface Pressure (hPa)"
+    },
+    "precipitation": {
+        "type": "number",
+        "description": "Total precipitation (rain, showers, snow) sum of the preceding hour (mm)"
+    },
+    "rain": {
+        "type": "number",
+        "description": "Only liquid precipitation of the preceding hour including local showers and rain from large scale systems (mm)"
+    },
+    "snowfall": {
+        "type": "number",
+        "description": "Snowfall amount of the preceding hour (cm). For the water equivalent in millimeter, divide by 7. E.g. 7 cm snow = 10 mm precipitation water equivalent"
+    },
+    "cloud_cover": {
+        "type": "number",
+        "description": "Current total cloud cover as an area fraction (%)"
+    },
+    "cloud_cover_low": {
+        "type": "number",
+        "description": "Current low level clouds and fog up to 2 km altitude (%)"
+    },
+    "cloud_cover_mid": {
+        "type": "number",
+        "description": "Current mid level clouds between 2 km and 6 km altitude (%)"
+    },
+    "cloud_cover_high": {
+        "type": "number",
+        "description": "Current high level clouds above 6 km altitude ("
+    },
+    "short_wave_radiation": {
+        "type": "number",
+        "description": "Shortwave solar radiation as average of the preceding hour. This is equal to the total global horizontal irradiationin (W/m²)"
+    },
+    "direct_radiation": {
+        "type": "number",
+        "description": "Direct solar radiation as average of the preceding hour. This is equal to the direct normal irradiation (W/m²)"
+    },
+    "direct_normal_irradiance": {
+        "type": "number",
+        "description": "Direct solar radiation as average of the preceding hour on the normal plane (W/m²)"
+    },
+    "diffuse_radiation": {
+        "type": "number",
+        "description": "Diffuse solar radiation as average of the preceding hour (W/m²)"
+    },
+    "global_tilted_irradiance": {
+        "type": "number",
+        "description": "Total radiation received on a tilted pane as average of the preceding hour. The calculation is assuming a fixed albedo of 20% and in isotropic sky. Please specify tilt and azimuth parameter. Tilt ranges from 0° to 90° and is typically around 45°. Azimuth should be close to 0° (0° south, -90° east, 90° west, ±180 north). If azimuth is set to 'nan', the calculation assumes a horizontal tracker. If tilt is set to 'nan', it is assumed that the panel has a vertical tracker. If both are set to 'nan', a bi-axial tracker is assumed"
+    },
+    "sunshine_duration": {
+        "type": "number",
+        "description": "Number of seconds of sunshine of the preceding hour per hour calculated by direct normalized irradiance exceeding 120 W/m², following the WMO definition (s)"
+    },
+    "wind_speed_10m": {
+        "type": "number",
+        "description": "Current Wind Speed at 10 meters above ground (km/h)"
+    },
+    "wind_speed_100m": {
+        "type": "number",
+        "description": "Current Wind Speed at 100 meters above ground (km/h)"
+    },
+    "wind_direction_10m": {
+        "type": "number",
+        "description": "Current Wind Direction at 10 meters above ground (degrees)"
+    },
+    "wind_direction_100m": {
+        "type": "number",
+        "description": "Current Wind Direction at 100 meters above ground (degrees)"
+    },
+    "wind_gusts_10m": {
+        "type": "number",
+        "description": "Gusts at 10 meters above ground of the indicated hour. Wind gusts in CERRA are defined as the maximum wind gusts of the preceding hour. (km/h)"
+    },
+    "et0_fao_evapotranspiration": {
+        "type": "number",
+        "description": "ET₀ Reference Evapotranspiration of a well watered grass field. Based on FAO-56 Penman-Monteith equations ET₀ is calculated from temperature, wind speed, humidity and solar radiation. Unlimited soil water is assumed. ET₀ is commonly used to estimate the required irrigation for plants. (mm)"
+    },
+    "snow_depth": {
+        "type": "number",
+        "description": "Current Snow Depth on the ground (m)"
+    },
+    "vapor_pressure_deficit": {
+        "type": "number",
+        "description": "Current Vapor Pressure Deificit (VPD) in kilopascal (kPa). For high VPD (>1.6), water transpiration of plants increases. For low VPD (<0.4), transpiration decreases (kPa)"
+    },
+    "soil_temperature_0_to_7cm": {
+        "type": "number",
+        "description": "Current Average temperature of soil in 0 to 7 cm depth (Celsius)"
+    },
+    "soil_temperature_7_to_28cm": {
+        "type": "number",
+        "description": "Current Average temperature of soil in 7 to 28 cm depth (Celsius)"
+    },
+    "soil_temperature_28_to_100cm": {
+        "type": "number",
+        "description": "Current Average temperature of soil in 28 to 100 cm depth (Celsius)"
+    },
+    "soil_temperature_100_to_255cm": {
+        "type": "number",
+        "description": "Current Average temperature of soil in 100 to 255 cm depth (Celsius)"
+    },
+    "soil_moisture_0_to_7cm": {
+        "type": "number",
+        "description": "Current volumetric soil moisture content in 0 to 7 cm depth (m³/m³)"
+    },
+    "soil_moisture_7_to_28cm": {
+        "type": "number",
+        "description": "Current volumetric soil moisture content in 7 to 28 cm depth (m³/m³)"
+    },
+    "soil_moisture_28_to_100cm": {
+        "type": "number",
+        "description": "Current volumetric soil moisture content in 28 to 100 cm depth (m³/m³)"
+    },
+    "soil_moisture_100_to_255cm": {
+        "type": "number",
+        "description": "Current volumetric soil moisture content in 100 to 255 cm depth (m³/m³)"
+    }  
+}
