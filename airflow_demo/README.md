@@ -28,11 +28,6 @@ pip install -r requirements.txt
 bash scripts/run_airflow.sh
 ```
 
-Access Airflow UI at **http://localhost:8080**  
-Login using username: `admin`, password: `admin`.
-
----
-
 ## DAG Description
 1. **Extract**: Simulates collecting weather data (randomly generated).  
 2. **Transform**: Cleans and adds a “feels_like” column.  
