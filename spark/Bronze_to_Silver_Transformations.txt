@@ -1,0 +1,369 @@
+BRONZE TO SILVER LAYER TRANSFORMATION DOCUMENTATION
+====================================================
+
+This document details the transformations applied to each attribute when converting
+raw ISD (Integrated Surface Data) from Bronze layer to Silver layer.
+
+Silver layer represents cleaned, validated, and standardized weather observations
+ready for further processing. All transformations use PySpark for scalability.
+
+================================================================================
+STATION METADATA TRANSFORMATIONS
+================================================================================
+
+1. STATION -> station_id
+   - Transformation: Direct mapping with trimming
+   - Action: Trim whitespace, cast to StringType
+   - Validation: None (identifier field)
+   - Missing Data: Preserved as-is
+
+2. NAME -> station_name
+   - Transformation: Direct mapping with trimming
+   - Action: Trim whitespace, cast to StringType
+   - Validation: None (text field)
+   - Missing Data: Preserved as-is
+
+3. LATITUDE -> station_latitude
+   - Transformation: Type conversion and validation
+   - Action: Cast to DoubleType, validate range [-90.0, 90.0]
+   - Validation: Values outside range set to NULL
+   - Missing Data: Empty strings or NULL values set to NULL
+
+4. LONGITUDE -> station_longitude
+   - Transformation: Type conversion and validation
+   - Action: Cast to DoubleType, validate range [-180.0, 180.0]
+   - Validation: Values outside range set to NULL
+   - Missing Data: Empty strings or NULL values set to NULL
+
+5. ELEVATION -> station_elevation
+   - Transformation: Type conversion
+   - Action: Cast to DoubleType (meters)
+   - Validation: None (can be negative for below sea level)
+   - Missing Data: Empty strings or NULL values set to NULL
+
+6. Derived: station_region
+   - Transformation: Extracted from station_name
+   - Action: Pattern matching on station name
+     - Contains " US", " CA", " MX" -> "north_america"
+     - Contains " NY" -> "northeast"
+     - Contains " CA" -> "west"
+     - Contains " TX" -> "south"
+     - Contains " FL" -> "southeast"
+     - Otherwise -> "unknown"
+   - Validation: None
+   - Missing Data: Defaults to "unknown"
+
+7. Derived: station_timezone
+   - Transformation: Calculated from longitude
+   - Action: Approximate UTC offset = longitude / 15.0 (cast to IntegerType)
+   - Validation: Only calculated if longitude is not NULL
+   - Missing Data: NULL if longitude is missing
+
+================================================================================
+TEMPORAL TRANSFORMATIONS
+================================================================================
+
+8. DATE -> timestamp
+   - Transformation: String to timestamp conversion
+   - Action: Parse ISO 8601 format "yyyy-MM-dd'T'HH:mm:ss" using to_timestamp()
+   - Validation: Records with invalid timestamps are filtered out
+   - Missing Data: Records with NULL timestamps are removed
+
+9. Derived: year
+   - Transformation: Extracted from timestamp
+   - Action: year(timestamp) function
+   - Validation: None
+   - Missing Data: NULL if timestamp is NULL
+
+10. Derived: month
+    - Transformation: Extracted from timestamp
+    - Action: month(timestamp) function
+    - Validation: None
+    - Missing Data: NULL if timestamp is NULL
+
+11. Derived: day
+    - Transformation: Extracted from timestamp
+    - Action: dayofmonth(timestamp) function
+    - Validation: None
+    - Missing Data: NULL if timestamp is NULL
+
+12. Derived: hour
+    - Transformation: Extracted from timestamp
+    - Action: hour(timestamp) function
+    - Validation: None
+    - Missing Data: NULL if timestamp is NULL
+
+13. Derived: season
+    - Transformation: Calculated from month
+    - Action: 
+      - Months 12, 1, 2 -> "winter"
+      - Months 3, 4, 5 -> "spring"
+      - Months 6, 7, 8 -> "summer"
+      - Otherwise -> "autumn"
+    - Validation: None
+    - Missing Data: NULL if month is NULL
+
+================================================================================
+TEMPERATURE TRANSFORMATIONS
+================================================================================
+
+14. TMP -> temperature_2m
+    - Transformation: Parse encoded format and convert units
+    - Source Format: "+0044,1" or "-0025,1" (signed value + quality flag)
+    - Action:
+      1. Extract numeric part using regex: REGEXP_EXTRACT(TMP, '^([+-]?\\d+)', 1)
+      2. Cast to DOUBLE
+      3. Divide by 10.0 (tenths precision to degrees)
+    - Validation:
+      - Filter out missing values: "+9999,9", "-9999,9", "9999,9"
+      - Validate range: [-50.0°C, 60.0°C]
+      - Values outside range set to NULL
+    - Missing Data: NULL for missing/invalid values
+    - Units: Degrees Celsius (°C)
+
+15. DEW -> dewpoint_2m
+    - Transformation: Parse encoded format and convert units
+    - Source Format: "+0044,1" or "-0025,1" (signed value + quality flag)
+    - Action: Same as TMP (extract, cast, divide by 10.0)
+    - Validation:
+      - Filter out missing values: "+9999,9", "-9999,9", "9999,9"
+      - Validate range: [-50.0°C, 60.0°C]
+      - Validate physical constraint: dewpoint <= temperature
+      - Values outside range or violating constraint set to NULL
+    - Missing Data: NULL for missing/invalid values
+    - Units: Degrees Celsius (°C)
+
+16. Derived: relative_humidity_2m
+    - Transformation: Calculated from temperature and dewpoint using Magnus formula
+    - Formula: RH = 100 * exp((17.625 * Td) / (243.04 + Td)) / exp((17.625 * T) / (243.04 + T))
+    - Source: Calculated from temperature_2m and dewpoint_2m
+    - Action: Uses PySpark expr() to calculate relative humidity
+    - Validation:
+      - Only calculated if both temperature and dewpoint are not NULL
+      - Validate range: [0.0%, 100.0%]
+      - Values outside range set to NULL
+    - Missing Data: NULL if temperature or dewpoint is missing
+    - Units: Percentage (%)
+    - Note: AH1/AH2 columns removed - humidity always calculated from temperature/dewpoint
+
+================================================================================
+PRESSURE TRANSFORMATIONS
+================================================================================
+
+17. SLP -> pressure_msl
+    - Transformation: Parse encoded format and convert units
+    - Source Format: "10117,1" (5-digit value + quality flag)
+    - Action:
+      1. Split by comma, take first part
+      2. Cast to DOUBLE
+      3. Divide by 10.0 (tenths precision to hectopascals)
+    - Validation:
+      - Filter out missing values: "99999,9"
+      - Validate range: [850.0 hPa, 1100.0 hPa] (reasonable atmospheric pressure)
+      - Values outside range set to NULL
+    - Missing Data: NULL for missing/invalid values
+    - Units: Hectopascals (hPa)
+
+================================================================================
+WIND TRANSFORMATIONS
+================================================================================
+
+18. WND -> wind_direction_10m
+    - Transformation: Parse direction from encoded format
+    - Source Format: "040,1,N,0026,1" (direction, quality, type, speed, quality)
+    - Action:
+      1. Split by comma
+      2. Extract first element (direction in degrees)
+      3. Cast to IntegerType
+    - Validation:
+      - Filter out missing: "999,9,9,9999,9" or direction = "999"
+      - Validate range: [0, 360] degrees
+      - Values outside range set to NULL
+    - Missing Data: NULL for missing/invalid values
+    - Units: Degrees (°) from true north
+
+19. WND -> wind_speed_10m
+    - Transformation: Parse speed and convert units
+    - Source Format: "040,1,N,0026,1" (direction, quality, type, speed, quality)
+    - Action:
+      1. Split by comma
+      2. Extract 4th element (speed)
+      3. Cast to DOUBLE
+      4. Multiply by 3.6 (convert m/s to km/h)
+    - Validation:
+      - Filter out missing: "999,9,9,9999,9" or speed = "9999"
+      - Validate range: [0.0, 200.0] km/h
+      - Values outside range set to NULL
+    - Missing Data: NULL for missing/invalid values
+    - Units: Kilometers per hour (km/h)
+
+20. GA1/GA2/GA3 -> wind_gusts_10m
+    - Transformation: Parse gust speed and convert units
+    - Source Format: "30,5" (speed + quality flag)
+    - Action:
+      1. Split by comma, take first part
+      2. Cast to DOUBLE
+      3. Multiply by 3.6 (convert m/s to km/h)
+      4. Try GA1 first, then GA2, then GA3 (coalesce)
+    - Validation:
+      - Filter out missing: "99,9" or starts with "99"
+      - No range validation (gusts can be very high)
+    - Missing Data: NULL if all GA1, GA2, GA3 are missing/invalid
+    - Units: Kilometers per hour (km/h)
+
+================================================================================
+PRECIPITATION TRANSFORMATIONS
+================================================================================
+
+21. AA1 -> precipitation
+    - Transformation: Parse depth and convert units
+    - Source Format: "01,00100,9,5" (period, depth, quality, hour)
+    - Action:
+      1. Split by comma
+      2. Extract 2nd element (depth in thousandths of inches)
+      3. Cast to DOUBLE
+      4. Divide by 1000.0 (convert to inches)
+      5. Multiply by 25.4 (convert inches to millimeters)
+    - Validation:
+      - Filter out missing: "99,99999,9,9" or period="99" or depth="99999"
+      - No upper limit validation (extreme precipitation possible)
+    - Missing Data: NULL for missing/invalid values
+    - Units: Millimeters (mm)
+
+22. precipitation -> rain
+    - Transformation: Direct mapping
+    - Action: rain = precipitation (same value)
+    - Validation: None
+    - Missing Data: Same as precipitation
+
+23. snowfall
+    - Transformation: Set to NULL (will be filled from Open-Meteo API in gold layer)
+    - Action: Always set to NULL using lit(None)
+    - Source: Not available in ISD data (AB1 column removed from processing)
+    - Missing Data: Always NULL in silver layer
+    - Units: Millimeters (mm)
+    - Note: Will be populated from Open-Meteo API during gold layer transformation for New York stations
+
+================================================================================
+CLOUD COVER TRANSFORMATIONS
+================================================================================
+
+24. cloud_cover
+    - Transformation: Set to NULL (will be filled from Open-Meteo API in gold layer)
+    - Action: Always set to NULL using lit(None)
+    - Source: Not available in ISD data (AI1/AI2/AJ1 columns removed from processing)
+    - Missing Data: Always NULL in silver layer
+    - Units: Percentage (%)
+    - Note: Will be populated from Open-Meteo API during gold layer transformation for New York stations
+
+================================================================================
+VISIBILITY TRANSFORMATIONS
+================================================================================
+
+26. VIS -> visibility_km
+    - Transformation: Parse distance and convert units
+    - Source Format: "000400,1,9,9" (distance, quality, type, quality)
+    - Action:
+      1. Split by comma, take first element
+      2. Cast to DOUBLE
+      3. Divide by 1000.0 (convert meters to kilometers)
+    - Validation:
+      - Filter out missing: "999999,9,9,9" or contains "999999"
+      - Validate range: [0.0, 200.0] km
+      - Values outside range set to NULL
+    - Missing Data: NULL for missing/invalid values
+    - Units: Kilometers (km)
+
+================================================================================
+WEATHER CODE TRANSFORMATIONS
+================================================================================
+
+27. KE1/MW1/MW2/MW3 -> weather_code
+    - Transformation: Extract weather phenomenon code
+    - Source Format: Text codes like "RA", "FG", "BR"
+    - Action:
+      1. Trim whitespace
+      2. Try KE1 first, then MW1, MW2, MW3 (coalesce)
+    - Validation: None (text field)
+    - Missing Data: NULL if all sources are missing
+    - Units: WMO weather code (text)
+
+================================================================================
+DATA QUALITY TRANSFORMATIONS
+================================================================================
+
+28. QUALITY_CONTROL -> (filtering)
+    - Transformation: Quality control filtering
+    - Action: Filter records to keep only:
+      - QUALITY_CONTROL LIKE "V0%"
+      - QUALITY_CONTROL LIKE "V1%"
+      - QUALITY_CONTROL LIKE "V2%"
+      - QUALITY_CONTROL LIKE "V3%"
+    - Validation: Records with other quality codes are removed
+    - Missing Data: Records with invalid quality codes are filtered out
+
+29. Derived: data_completeness
+    - Transformation: Calculate percentage of non-null key fields
+    - Action: Count non-null values in 9 key fields:
+      - temperature_2m, dewpoint_2m, relative_humidity_2m
+      - pressure_msl, wind_speed_10m, wind_direction_10m
+      - precipitation, visibility_km, cloud_cover
+    - Formula: (count of non-null fields / 9) * 100.0
+    - Validation: None
+    - Missing Data: Always calculated (0% if all fields missing)
+    - Units: Percentage (%)
+
+================================================================================
+METADATA PRESERVATION
+================================================================================
+
+30. SOURCE -> SOURCE
+    - Transformation: Direct mapping (preserved)
+    - Action: No transformation
+    - Validation: None
+    - Missing Data: Preserved as-is
+
+31. REPORT_TYPE -> REPORT_TYPE
+    - Transformation: Direct mapping (preserved)
+    - Action: No transformation
+    - Validation: None
+    - Missing Data: Preserved as-is
+
+32. QUALITY_CONTROL -> QUALITY_CONTROL
+    - Transformation: Direct mapping (preserved)
+    - Action: No transformation (after filtering)
+    - Validation: None
+    - Missing Data: Preserved as-is
+
+================================================================================
+DATA FILTERING RULES
+================================================================================
+
+1. Records with NULL timestamps are removed
+2. Records with invalid quality control codes (not V0-V3) are removed
+3. Records must have at least one of: temperature_2m, pressure_msl, 
+   wind_speed_10m, or precipitation (not all NULL)
+
+================================================================================
+SUMMARY OF TRANSFORMATIONS
+================================================================================
+
+Total Input Attributes: ~45 ISD fields
+Total Output Attributes: 30+ silver layer fields
+
+Key Transformations:
+- 13 direct mappings (with validation)
+- 9 derived/calculated fields (including relative_humidity from temperature/dewpoint)
+- 9 parsed encoded fields (TMP, DEW, WND, etc.)
+- Multiple unit conversions (m/s to km/h, inches to mm)
+- Range validations for all numeric fields
+- Missing data handling with NULL values
+- Data quality filtering
+- Removed columns: AH1, AH2, AI1, AI2, AJ1, AB1 (will be filled from Open-Meteo API in gold layer)
+
+Output Format: Parquet files partitioned by year and month
+Output Location: {SILVER_OUTPUT_PATH}
+
+================================================================================
+
+

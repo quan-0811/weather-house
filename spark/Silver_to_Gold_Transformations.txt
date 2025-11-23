@@ -1,0 +1,1081 @@
+SILVER TO GOLD LAYER TRANSFORMATION DOCUMENTATION
+==================================================
+
+This document details the complex transformations applied to each attribute when
+converting cleaned Silver layer data to Gold layer data.
+
+Gold layer represents aggregated metrics, feature-engineered data, and ML-ready
+features suitable for long-term storage and machine learning models. All
+transformations use PySpark for scalability.
+
+IMPORTANT: This transformation includes data enrichment from Open-Meteo API for
+New York stations to fill missing data and add additional attributes.
+
+================================================================================
+OPEN-METEO API ENRICHMENT (New York Stations Only)
+================================================================================
+
+Before aggregation, the silver data is enriched with historical weather data
+from the Open-Meteo Archive API for stations located in New York (latitude
+40-42°N, longitude -75 to -73°W).
+
+API Data Retrieved (Only to Fill Missing Values):
+- temperature_2m, dew_point_2m
+- relative_humidity_2m, pressure_msl
+- wind_speed_10m, wind_gusts_10m, wind_direction_10m
+- precipitation, rain, snowfall
+- cloud_cover, weather_code, visibility
+
+Note: The API is ONLY used to fill missing values in existing silver layer fields.
+NO new attributes are pulled from the API. All new attributes are derived from
+existing silver layer data.
+
+Enrichment Process:
+1. Filter silver data for New York stations (latitude 40-42°N, longitude -75 to -73°W)
+2. Determine date range from data
+3. For each unique station (up to 5 stations), fetch hourly data from API
+4. Join API data with silver data on station_id, year, month, day, hour
+5. Fill missing values in silver data with API data using coalesce()
+   - Only fills NULL/missing values, does not overwrite existing data
+   - Only fills fields that already exist in silver layer
+
+Fields Filled from API (when missing in silver):
+- temperature_2m: Filled if NULL
+- dewpoint_2m: Filled if NULL
+- relative_humidity_2m: Filled if NULL
+- pressure_msl: Filled if NULL
+- wind_speed_10m: Filled if NULL
+- wind_gusts_10m: Filled if NULL
+- wind_direction_10m: Filled if NULL
+- precipitation: Filled if NULL
+- rain: Filled if NULL
+- snowfall: Filled if NULL
+- cloud_cover: Filled if NULL
+- weather_code: Filled if NULL
+- visibility_km: Filled if NULL (converted from meters to km)
+
+Derived Attributes Created (from existing silver data):
+- temperature_dewpoint_spread: temperature_2m - dewpoint_2m
+- heat_index: Calculated feels-like temperature in hot conditions (from temp + humidity)
+- wind_chill: Calculated feels-like temperature in cold conditions (from temp + wind)
+- feels_like_temperature: Best available feels-like (heat_index or wind_chill or temperature)
+- precipitation_intensity: Precipitation amount when > 0
+- is_raining: Binary flag (1 if precipitation > 0.1mm, else 0)
+- is_snowing: Binary flag (1 if snowfall > 0.1mm, else 0)
+
+================================================================================
+OUTPUT STRUCTURE
+================================================================================
+
+Gold layer produces three main datasets:
+1. Hourly Aggregates: Aggregated metrics per hour with time-series features
+2. Daily Aggregates: Daily summaries with event flags
+3. Monthly Aggregates: Monthly summaries with climatological metrics
+
+================================================================================
+PART 1: HOURLY AGGREGATES
+================================================================================
+
+Hourly aggregates are created by grouping silver records by:
+- station_id, station_name, station_region
+- station_latitude, station_longitude, station_elevation, station_timezone
+- year, month, day, hour, season
+
+For each group, the following aggregations are computed:
+
+TEMPERATURE METRICS (from temperature_2m):
+-------------------------------------------
+1. avg_temperature_2m
+   - Transformation: Average of all temperature_2m values in the hour
+   - Function: avg(temperature_2m)
+   - Units: Degrees Celsius (°C)
+   - Missing Data: NULL if no valid temperatures in hour
+
+2. min_temperature_2m
+   - Transformation: Minimum temperature in the hour
+   - Function: min(temperature_2m)
+   - Units: Degrees Celsius (°C)
+   - Missing Data: NULL if no valid temperatures in hour
+
+3. max_temperature_2m
+   - Transformation: Maximum temperature in the hour
+   - Function: max(temperature_2m)
+   - Units: Degrees Celsius (°C)
+   - Missing Data: NULL if no valid temperatures in hour
+
+4. std_temperature_2m
+   - Transformation: Standard deviation of temperatures in the hour
+   - Function: stddev(temperature_2m)
+   - Units: Degrees Celsius (°C)
+   - Missing Data: NULL if < 2 observations
+
+5. var_temperature_2m
+   - Transformation: Variance of temperatures in the hour
+   - Function: variance(temperature_2m)
+   - Units: (°C)²
+   - Missing Data: NULL if < 2 observations
+
+6. temperature_range (derived)
+   - Transformation: max_temperature_2m - min_temperature_2m
+   - Action: Calculated from aggregated values
+   - Units: Degrees Celsius (°C)
+   - Missing Data: NULL if either min or max is NULL
+
+HUMIDITY METRICS (from relative_humidity_2m):
+----------------------------------------------
+7. avg_humidity_2m
+   - Transformation: Average relative humidity in the hour
+   - Function: avg(relative_humidity_2m)
+   - Units: Percentage (%)
+   - Missing Data: NULL if no valid humidity values
+
+8. min_humidity_2m
+   - Transformation: Minimum relative humidity in the hour
+   - Function: min(relative_humidity_2m)
+   - Units: Percentage (%)
+   - Missing Data: NULL if no valid humidity values
+
+9. max_humidity_2m
+   - Transformation: Maximum relative humidity in the hour
+   - Function: max(relative_humidity_2m)
+   - Units: Percentage (%)
+   - Missing Data: NULL if no valid humidity values
+
+10. humidity_range (derived)
+    - Transformation: max_humidity_2m - min_humidity_2m
+    - Action: Calculated from aggregated values
+    - Units: Percentage (%)
+    - Missing Data: NULL if either min or max is NULL
+
+DEWPOINT METRICS (from dewpoint_2m):
+------------------------------------
+11. avg_dewpoint_2m
+    - Transformation: Average dewpoint in the hour
+    - Function: avg(dewpoint_2m)
+    - Units: Degrees Celsius (°C)
+    - Missing Data: NULL if no valid dewpoint values
+
+12. min_dewpoint_2m
+    - Transformation: Minimum dewpoint in the hour
+    - Function: min(dewpoint_2m)
+    - Units: Degrees Celsius (°C)
+    - Missing Data: NULL if no valid dewpoint values
+
+13. max_dewpoint_2m
+    - Transformation: Maximum dewpoint in the hour
+    - Function: max(dewpoint_2m)
+    - Units: Degrees Celsius (°C)
+    - Missing Data: NULL if no valid dewpoint values
+
+PRESSURE METRICS (from pressure_msl):
+---------------------------------------
+14. avg_pressure_msl
+    - Transformation: Average sea level pressure in the hour
+    - Function: avg(pressure_msl)
+    - Units: Hectopascals (hPa)
+    - Missing Data: NULL if no valid pressure values
+
+15. min_pressure_msl
+    - Transformation: Minimum pressure in the hour
+    - Function: min(pressure_msl)
+    - Units: Hectopascals (hPa)
+    - Missing Data: NULL if no valid pressure values
+
+16. max_pressure_msl
+    - Transformation: Maximum pressure in the hour
+    - Function: max(pressure_msl)
+    - Units: Hectopascals (hPa)
+    - Missing Data: NULL if no valid pressure values
+
+17. std_pressure_msl
+    - Transformation: Standard deviation of pressure in the hour
+    - Function: stddev(pressure_msl)
+    - Units: Hectopascals (hPa)
+    - Missing Data: NULL if < 2 observations
+
+18. pressure_range (derived)
+    - Transformation: max_pressure_msl - min_pressure_msl
+    - Action: Calculated from aggregated values
+    - Units: Hectopascals (hPa)
+    - Missing Data: NULL if either min or max is NULL
+
+WIND METRICS (from wind_speed_10m, wind_direction_10m, wind_gusts_10m):
+-----------------------------------------------------------------------
+19. avg_wind_speed_10m
+    - Transformation: Average wind speed in the hour
+    - Function: avg(wind_speed_10m)
+    - Units: Kilometers per hour (km/h)
+    - Missing Data: NULL if no valid wind speed values
+
+20. max_wind_speed_10m
+    - Transformation: Maximum wind speed in the hour
+    - Function: max(wind_speed_10m)
+    - Units: Kilometers per hour (km/h)
+    - Missing Data: NULL if no valid wind speed values
+
+21. min_wind_speed_10m
+    - Transformation: Minimum wind speed in the hour
+    - Function: min(wind_speed_10m)
+    - Units: Kilometers per hour (km/h)
+    - Missing Data: NULL if no valid wind speed values
+
+22. max_wind_gusts_10m
+    - Transformation: Maximum wind gust in the hour
+    - Function: max(wind_gusts_10m)
+    - Units: Kilometers per hour (km/h)
+    - Missing Data: NULL if no valid gust values
+
+23. avg_wind_direction_10m
+    - Transformation: Average wind direction in the hour
+    - Function: avg(wind_direction_10m)
+    - Units: Degrees (°)
+    - Note: Circular average (may need special handling for 0/360 wrap)
+    - Missing Data: NULL if no valid direction values
+
+24. std_wind_direction_10m
+    - Transformation: Standard deviation of wind direction
+    - Function: stddev(wind_direction_10m)
+    - Units: Degrees (°)
+    - Missing Data: NULL if < 2 observations
+
+25. wind_speed_range (derived)
+    - Transformation: max_wind_speed_10m - min_wind_speed_10m
+    - Action: Calculated from aggregated values
+    - Units: Kilometers per hour (km/h)
+    - Missing Data: NULL if either min or max is NULL
+
+PRECIPITATION METRICS (from precipitation, rain, snowfall):
+------------------------------------------------------------
+26. total_precipitation
+    - Transformation: Sum of all precipitation in the hour
+    - Function: sum(precipitation)
+    - Units: Millimeters (mm)
+    - Missing Data: 0.0 if no precipitation (not NULL)
+
+27. max_precipitation_intensity
+    - Transformation: Maximum single observation precipitation rate
+    - Function: max(precipitation)
+    - Units: Millimeters (mm)
+    - Missing Data: NULL if no precipitation values
+
+28. total_rain
+    - Transformation: Sum of rain in the hour
+    - Function: sum(rain)
+    - Units: Millimeters (mm)
+    - Missing Data: 0.0 if no rain
+
+29. total_snowfall
+    - Transformation: Sum of snowfall in the hour
+    - Function: sum(snowfall)
+    - Units: Millimeters (mm)
+    - Missing Data: 0.0 if no snowfall
+
+30. precipitation_events
+    - Transformation: Count of observations with precipitation > 0
+    - Function: count(when(precipitation > 0, 1))
+    - Units: Count (integer)
+    - Missing Data: 0 if no precipitation events
+
+31. heavy_precipitation_events
+    - Transformation: Count of observations with precipitation > 2.5 mm
+    - Function: count(when(precipitation > 2.5, 1))
+    - Units: Count (integer)
+    - Missing Data: 0 if no heavy precipitation
+
+VISIBILITY AND CLOUD METRICS:
+------------------------------
+32. avg_visibility_km
+    - Transformation: Average visibility in the hour
+    - Function: avg(visibility_km)
+    - Units: Kilometers (km)
+    - Missing Data: NULL if no valid visibility values
+
+33. min_visibility_km
+    - Transformation: Minimum visibility in the hour
+    - Function: min(visibility_km)
+    - Units: Kilometers (km)
+    - Missing Data: NULL if no valid visibility values
+
+34. avg_cloud_cover
+    - Transformation: Average cloud cover in the hour
+    - Function: avg(cloud_cover)
+    - Units: Percentage (%)
+    - Missing Data: NULL if no valid cloud cover values
+
+35. max_cloud_cover
+    - Transformation: Maximum cloud cover in the hour
+    - Function: max(cloud_cover)
+    - Units: Percentage (%)
+    - Missing Data: NULL if no valid cloud cover values
+
+DATA QUALITY:
+-------------
+36. avg_data_completeness
+    - Transformation: Average data completeness score
+    - Function: avg(data_completeness)
+    - Units: Percentage (%)
+    - Missing Data: NULL if no completeness scores
+
+37. observation_count
+    - Transformation: Total number of observations in the hour
+    - Function: count(*)
+    - Units: Count (integer)
+    - Missing Data: Always present (minimum 0)
+
+================================================================================
+PART 2: TIME-SERIES FEATURES (Applied to Hourly Aggregates)
+================================================================================
+
+These features use window functions to compare current hour with previous/next hours:
+
+LAG/LEAD FEATURES:
+------------------
+38. prev_hour_temp
+    - Transformation: Temperature from previous hour
+    - Function: lag(avg_temperature_2m, 1) over window
+    - Window: Partitioned by station_id, ordered by year, month, day, hour
+    - Missing Data: NULL for first hour of each station
+
+39. next_hour_temp
+    - Transformation: Temperature from next hour
+    - Function: lead(avg_temperature_2m, 1) over window
+    - Missing Data: NULL for last hour of each station
+
+40. prev_hour_pressure
+    - Transformation: Pressure from previous hour
+    - Function: lag(avg_pressure_msl, 1) over window
+    - Missing Data: NULL for first hour
+
+41. next_hour_pressure
+    - Transformation: Pressure from next hour
+    - Function: lead(avg_pressure_msl, 1) over window
+    - Missing Data: NULL for last hour
+
+42. prev_hour_wind
+    - Transformation: Wind speed from previous hour
+    - Function: lag(avg_wind_speed_10m, 1) over window
+    - Missing Data: NULL for first hour
+
+43. prev_hour_humidity
+    - Transformation: Humidity from previous hour
+    - Function: lag(avg_humidity_2m, 1) over window
+    - Missing Data: NULL for first hour
+
+44. prev_hour_precip
+    - Transformation: Precipitation from previous hour
+    - Function: lag(total_precipitation, 1) over window
+    - Missing Data: NULL for first hour
+
+TREND FEATURES:
+---------------
+45. temperature_trend
+    - Transformation: Categorical trend indicator
+    - Logic:
+      - "rising" if current > previous + 1.0°C
+      - "falling" if current < previous - 1.0°C
+      - "stable" otherwise
+      - "unknown" if previous is NULL
+    - Units: Categorical string
+    - Missing Data: "unknown" if prev_hour_temp is NULL
+
+46. pressure_trend
+    - Transformation: Categorical pressure trend
+    - Logic: Same as temperature_trend with 1.0 hPa threshold
+    - Units: Categorical string
+    - Missing Data: "unknown" if prev_hour_pressure is NULL
+
+47. temperature_change_rate
+    - Transformation: Rate of temperature change (°C per hour)
+    - Formula: avg_temperature_2m - prev_hour_temp
+    - Units: Degrees Celsius per hour (°C/h)
+    - Missing Data: NULL if prev_hour_temp is NULL
+
+48. pressure_change_rate
+    - Transformation: Rate of pressure change (hPa per hour)
+    - Formula: avg_pressure_msl - prev_hour_pressure
+    - Units: Hectopascals per hour (hPa/h)
+    - Missing Data: NULL if prev_hour_pressure is NULL
+
+49. wind_change_rate
+    - Transformation: Rate of wind speed change
+    - Formula: avg_wind_speed_10m - prev_hour_wind
+    - Units: Kilometers per hour per hour (km/h/h)
+    - Missing Data: NULL if prev_hour_wind is NULL
+
+================================================================================
+PART 3: ROLLING WINDOW FEATURES (Applied to Hourly Aggregates)
+================================================================================
+
+These features use rolling windows to compute statistics over multiple hours:
+
+3-HOUR WINDOW:
+--------------
+50. temp_3h_avg
+    - Transformation: 3-hour rolling average temperature
+    - Window: Current hour + 2 previous hours
+    - Function: avg(avg_temperature_2m) over window_3h
+    - Missing Data: NULL if < 3 hours of data
+
+51. temp_3h_std
+    - Transformation: 3-hour rolling standard deviation
+    - Function: stddev(avg_temperature_2m) over window_3h
+    - Missing Data: NULL if < 2 hours of data
+
+52. precip_3h_total
+    - Transformation: 3-hour rolling total precipitation
+    - Function: sum(total_precipitation) over window_3h
+    - Missing Data: 0.0 if no precipitation
+
+53. wind_3h_max
+    - Transformation: Maximum wind speed in 3-hour window
+    - Function: max(max_wind_speed_10m) over window_3h
+    - Missing Data: NULL if no wind data
+
+54. pressure_3h_avg
+    - Transformation: 3-hour rolling average pressure
+    - Function: avg(avg_pressure_msl) over window_3h
+    - Missing Data: NULL if < 3 hours of data
+
+6-HOUR WINDOW:
+--------------
+55. temp_6h_avg
+    - Transformation: 6-hour rolling average temperature
+    - Window: Current hour + 5 previous hours
+    - Function: avg(avg_temperature_2m) over window_6h
+    - Missing Data: NULL if < 6 hours of data
+
+56. temp_6h_std
+    - Transformation: 6-hour rolling standard deviation
+    - Function: stddev(avg_temperature_2m) over window_6h
+    - Missing Data: NULL if < 2 hours of data
+
+57. precip_6h_total
+    - Transformation: 6-hour rolling total precipitation
+    - Function: sum(total_precipitation) over window_6h
+    - Missing Data: 0.0 if no precipitation
+
+58. pressure_6h_trend
+    - Transformation: Pressure range in 6-hour window
+    - Formula: max(avg_pressure_msl) - min(avg_pressure_msl) over window_6h
+    - Units: Hectopascals (hPa)
+    - Missing Data: NULL if < 2 hours of data
+
+12-HOUR WINDOW:
+---------------
+59. temp_12h_avg
+    - Transformation: 12-hour rolling average temperature
+    - Window: Current hour + 11 previous hours
+    - Function: avg(avg_temperature_2m) over window_12h
+    - Missing Data: NULL if < 12 hours of data
+
+60. temp_12h_range
+    - Transformation: Temperature range in 12-hour window
+    - Formula: max(avg_temperature_2m) - min(avg_temperature_2m) over window_12h
+    - Units: Degrees Celsius (°C)
+    - Missing Data: NULL if < 2 hours of data
+
+61. precip_12h_total
+    - Transformation: 12-hour rolling total precipitation
+    - Function: sum(total_precipitation) over window_12h
+    - Missing Data: 0.0 if no precipitation
+
+24-HOUR WINDOW:
+---------------
+62. temp_24h_avg
+    - Transformation: 24-hour rolling average temperature
+    - Window: Current hour + 23 previous hours
+    - Function: avg(avg_temperature_2m) over window_24h
+    - Missing Data: NULL if < 24 hours of data
+
+63. temp_24h_range
+    - Transformation: Temperature range in 24-hour window
+    - Formula: max(avg_temperature_2m) - min(avg_temperature_2m) over window_24h
+    - Units: Degrees Celsius (°C)
+    - Missing Data: NULL if < 2 hours of data
+
+64. precip_24h_total
+    - Transformation: 24-hour rolling total precipitation
+    - Function: sum(total_precipitation) over window_24h
+    - Missing Data: 0.0 if no precipitation
+
+================================================================================
+PART 4: DAILY AGGREGATES
+================================================================================
+
+Daily aggregates are created by grouping silver records by:
+- station_id, station_name, station_region
+- station_latitude, station_longitude, station_elevation, station_timezone
+- year, month, day, season
+
+TEMPERATURE METRICS:
+--------------------
+65. daily_avg_temp
+    - Transformation: Average temperature for the day
+    - Function: avg(temperature_2m)
+    - Units: Degrees Celsius (°C)
+
+66. daily_min_temp
+    - Transformation: Minimum temperature for the day
+    - Function: min(temperature_2m)
+    - Units: Degrees Celsius (°C)
+
+67. daily_max_temp
+    - Transformation: Maximum temperature for the day
+    - Function: max(temperature_2m)
+    - Units: Degrees Celsius (°C)
+
+68. daily_temp_std
+    - Transformation: Standard deviation of daily temperatures
+    - Function: stddev(temperature_2m)
+    - Units: Degrees Celsius (°C)
+
+69. diurnal_temp_range
+    - Transformation: Daily temperature range (max - min)
+    - Formula: max(temperature_2m) - min(temperature_2m)
+    - Units: Degrees Celsius (°C)
+
+HUMIDITY METRICS:
+-----------------
+70. daily_avg_humidity
+    - Transformation: Average relative humidity for the day
+    - Function: avg(relative_humidity_2m)
+    - Units: Percentage (%)
+
+71. daily_min_humidity
+    - Transformation: Minimum relative humidity for the day
+    - Function: min(relative_humidity_2m)
+    - Units: Percentage (%)
+
+72. daily_max_humidity
+    - Transformation: Maximum relative humidity for the day
+    - Function: max(relative_humidity_2m)
+    - Units: Percentage (%)
+
+DEWPOINT METRICS:
+-----------------
+73. daily_avg_dewpoint
+    - Transformation: Average dewpoint for the day
+    - Function: avg(dewpoint_2m)
+    - Units: Degrees Celsius (°C)
+
+74. daily_min_dewpoint
+    - Transformation: Minimum dewpoint for the day
+    - Function: min(dewpoint_2m)
+    - Units: Degrees Celsius (°C)
+
+75. daily_max_dewpoint
+    - Transformation: Maximum dewpoint for the day
+    - Function: max(dewpoint_2m)
+    - Units: Degrees Celsius (°C)
+
+PRESSURE METRICS:
+-----------------
+76. daily_avg_pressure
+    - Transformation: Average pressure for the day
+    - Function: avg(pressure_msl)
+    - Units: Hectopascals (hPa)
+
+77. daily_max_pressure
+    - Transformation: Maximum pressure for the day
+    - Function: max(pressure_msl)
+    - Units: Hectopascals (hPa)
+
+78. daily_min_pressure
+    - Transformation: Minimum pressure for the day
+    - Function: min(pressure_msl)
+    - Units: Hectopascals (hPa)
+
+79. daily_pressure_std
+    - Transformation: Standard deviation of daily pressure
+    - Function: stddev(pressure_msl)
+    - Units: Hectopascals (hPa)
+
+WIND METRICS:
+-------------
+80. daily_avg_wind_speed
+    - Transformation: Average wind speed for the day
+    - Function: avg(wind_speed_10m)
+    - Units: Kilometers per hour (km/h)
+
+81. daily_max_wind_speed
+    - Transformation: Maximum wind speed for the day
+    - Function: max(wind_speed_10m)
+    - Units: Kilometers per hour (km/h)
+
+82. daily_max_wind_gust
+    - Transformation: Maximum wind gust for the day
+    - Function: max(wind_gusts_10m)
+    - Units: Kilometers per hour (km/h)
+
+83. high_wind_hours
+    - Transformation: Count of hours with wind speed > 30 km/h
+    - Function: count(when(wind_speed_10m > 30, 1))
+    - Units: Count (integer)
+
+84. extreme_wind_hours
+    - Transformation: Count of hours with wind speed > 50 km/h
+    - Function: count(when(wind_speed_10m > 50, 1))
+    - Units: Count (integer)
+
+PRECIPITATION METRICS:
+-----------------------
+85. daily_total_precipitation
+    - Transformation: Total precipitation for the day
+    - Function: sum(precipitation)
+    - Units: Millimeters (mm)
+
+86. daily_max_precip_intensity
+    - Transformation: Maximum precipitation rate for the day
+    - Function: max(precipitation)
+    - Units: Millimeters (mm)
+
+87. daily_total_rain
+    - Transformation: Total rain for the day
+    - Function: sum(rain)
+    - Units: Millimeters (mm)
+
+88. daily_total_snowfall
+    - Transformation: Total snowfall for the day
+    - Function: sum(snowfall)
+    - Units: Millimeters (mm)
+
+89. precipitation_hours
+    - Transformation: Count of hours with precipitation > 0
+    - Function: count(when(precipitation > 0, 1))
+    - Units: Count (integer)
+
+90. heavy_precip_hours
+    - Transformation: Count of hours with precipitation > 2.5 mm
+    - Function: count(when(precipitation > 2.5, 1))
+    - Units: Count (integer)
+
+VISIBILITY AND CLOUD:
+---------------------
+91. daily_avg_visibility
+    - Transformation: Average visibility for the day
+    - Function: avg(visibility_km)
+    - Units: Kilometers (km)
+
+92. daily_min_visibility
+    - Transformation: Minimum visibility for the day
+    - Function: min(visibility_km)
+    - Units: Kilometers (km)
+
+93. fog_hours
+    - Transformation: Count of hours with visibility < 1.0 km
+    - Function: count(when(visibility_km < 1.0, 1))
+    - Units: Count (integer)
+
+94. daily_avg_cloud_cover
+    - Transformation: Average cloud cover for the day
+    - Function: avg(cloud_cover)
+    - Units: Percentage (%)
+
+DATA QUALITY:
+-------------
+95. daily_data_completeness
+    - Transformation: Average data completeness for the day
+    - Function: avg(data_completeness)
+    - Units: Percentage (%)
+
+96. daily_observation_count
+    - Transformation: Total observations for the day
+    - Function: count(*)
+    - Units: Count (integer)
+
+DAILY EVENT FLAGS:
+------------------
+97. extreme_temp_day
+    - Transformation: Binary flag for extreme temperature day
+    - Logic: 1 if (daily_max_temp > 35°C) OR (daily_min_temp < -20°C), else 0
+    - Units: Binary (0 or 1)
+
+98. precipitation_day
+    - Transformation: Binary flag for precipitation day
+    - Logic: 1 if daily_total_precipitation > 0.1 mm, else 0
+    - Units: Binary (0 or 1)
+
+99. heavy_precipitation_day
+    - Transformation: Binary flag for heavy precipitation day
+    - Logic: 1 if daily_total_precipitation > 10.0 mm, else 0
+    - Units: Binary (0 or 1)
+
+100. windy_day
+     - Transformation: Binary flag for windy day
+     - Logic: 1 if daily_max_wind_speed > 40 km/h, else 0
+     - Units: Binary (0 or 1)
+
+101. foggy_day
+     - Transformation: Binary flag for foggy day
+     - Logic: 1 if fog_hours > 0, else 0
+     - Units: Binary (0 or 1)
+
+================================================================================
+PART 5: MONTHLY AGGREGATES
+================================================================================
+
+Monthly aggregates are created by grouping daily aggregates by:
+- station_id, station_name, station_region
+- station_latitude, station_longitude, station_elevation, station_timezone
+- year, month
+
+TEMPERATURE METRICS:
+--------------------
+102. monthly_avg_temp
+     - Transformation: Average of daily average temperatures
+     - Function: avg(daily_avg_temp)
+     - Units: Degrees Celsius (°C)
+
+103. monthly_min_temp
+     - Transformation: Minimum of daily minimum temperatures
+     - Function: min(daily_min_temp)
+     - Units: Degrees Celsius (°C)
+
+104. monthly_max_temp
+     - Transformation: Maximum of daily maximum temperatures
+     - Function: max(daily_max_temp)
+     - Units: Degrees Celsius (°C)
+
+105. monthly_avg_diurnal_range
+     - Transformation: Average daily temperature range
+     - Function: avg(diurnal_temp_range)
+     - Units: Degrees Celsius (°C)
+
+106. monthly_max_diurnal_range
+     - Transformation: Maximum daily temperature range
+     - Function: max(diurnal_temp_range)
+     - Units: Degrees Celsius (°C)
+
+PRECIPITATION METRICS:
+----------------------
+107. monthly_total_precipitation
+     - Transformation: Sum of daily total precipitation
+     - Function: sum(daily_total_precipitation)
+     - Units: Millimeters (mm)
+
+108. monthly_avg_daily_precip
+     - Transformation: Average daily precipitation
+     - Function: avg(daily_total_precipitation)
+     - Units: Millimeters (mm)
+
+109. monthly_max_daily_precip
+     - Transformation: Maximum daily precipitation
+     - Function: max(daily_total_precipitation)
+     - Units: Millimeters (mm)
+
+110. precipitation_days
+     - Transformation: Count of days with precipitation
+     - Function: sum(precipitation_day)
+     - Units: Count (integer)
+
+111. heavy_precipitation_days
+     - Transformation: Count of days with heavy precipitation
+     - Function: sum(heavy_precipitation_day)
+     - Units: Count (integer)
+
+112. monthly_total_rain
+     - Transformation: Sum of daily rain
+     - Function: sum(daily_total_rain)
+     - Units: Millimeters (mm)
+
+113. monthly_total_snowfall
+     - Transformation: Sum of daily snowfall
+     - Function: sum(daily_total_snowfall)
+     - Units: Millimeters (mm)
+
+WIND METRICS:
+-------------
+114. monthly_avg_wind_speed
+     - Transformation: Average of daily average wind speeds
+     - Function: avg(daily_avg_wind_speed)
+     - Units: Kilometers per hour (km/h)
+
+115. monthly_max_wind_gust
+     - Transformation: Maximum daily wind gust
+     - Function: max(daily_max_wind_gust)
+     - Units: Kilometers per hour (km/h)
+
+116. windy_days
+     - Transformation: Count of windy days
+     - Function: sum(windy_day)
+     - Units: Count (integer)
+
+PRESSURE METRICS:
+-----------------
+117. monthly_avg_pressure
+     - Transformation: Average of daily average pressures
+     - Function: avg(daily_avg_pressure)
+     - Units: Hectopascals (hPa)
+
+118. monthly_pressure_variability
+     - Transformation: Standard deviation of daily average pressures
+     - Function: stddev(daily_avg_pressure)
+     - Units: Hectopascals (hPa)
+
+EVENT METRICS:
+--------------
+119. extreme_temp_days
+     - Transformation: Count of extreme temperature days
+     - Function: sum(extreme_temp_day)
+     - Units: Count (integer)
+
+120. foggy_days
+     - Transformation: Count of foggy days
+     - Function: sum(foggy_day)
+     - Units: Count (integer)
+
+121. total_fog_hours
+     - Transformation: Total fog hours in the month
+     - Function: sum(fog_hours)
+     - Units: Count (integer)
+
+DATA QUALITY:
+-------------
+122. monthly_data_completeness
+     - Transformation: Average data completeness for the month
+     - Function: avg(daily_data_completeness)
+     - Units: Percentage (%)
+
+123. days_in_month
+     - Transformation: Number of days with data in the month
+     - Function: count(*)
+     - Units: Count (integer)
+
+================================================================================
+PART 6: ML FEATURE ENGINEERING (Applied to Hourly Aggregates)
+================================================================================
+
+CYCLICAL ENCODING FEATURES:
+----------------------------
+124. hour_sin
+     - Transformation: Sine encoding of hour (0-23)
+     - Formula: sin(2 * π * hour / 24)
+     - Purpose: Capture cyclical nature of daily patterns
+     - Range: [-1, 1]
+
+125. hour_cos
+     - Transformation: Cosine encoding of hour (0-23)
+     - Formula: cos(2 * π * hour / 24)
+     - Purpose: Complement to hour_sin for full cyclical representation
+     - Range: [-1, 1]
+
+126. month_sin
+     - Transformation: Sine encoding of month (1-12)
+     - Formula: sin(2 * π * month / 12)
+     - Purpose: Capture seasonal cyclical patterns
+     - Range: [-1, 1]
+
+127. month_cos
+     - Transformation: Cosine encoding of month (1-12)
+     - Formula: cos(2 * π * month / 12)
+     - Purpose: Complement to month_sin
+     - Range: [-1, 1]
+
+128. day_of_year
+     - Transformation: Day of year (1-365/366)
+     - Function: dayofyear(timestamp)
+     - Purpose: Capture annual cyclical patterns
+
+129. day_sin
+     - Transformation: Sine encoding of day of year
+     - Formula: sin(2 * π * day_of_year / 365)
+     - Purpose: Annual cyclical patterns
+     - Range: [-1, 1]
+
+130. day_cos
+     - Transformation: Cosine encoding of day of year
+     - Formula: cos(2 * π * day_of_year / 365)
+     - Purpose: Complement to day_sin
+     - Range: [-1, 1]
+
+GEOGRAPHICAL FEATURES:
+----------------------
+131. latitude_rad
+     - Transformation: Latitude in radians
+     - Formula: radians(station_latitude)
+     - Purpose: For distance calculations and spatial ML models
+
+132. longitude_rad
+     - Transformation: Longitude in radians
+     - Formula: radians(station_longitude)
+     - Purpose: For distance calculations and spatial ML models
+
+133. elevation_km
+     - Transformation: Elevation in kilometers
+     - Formula: station_elevation / 1000.0
+     - Purpose: Normalize elevation for ML models
+     - Units: Kilometers (km)
+
+DERIVED COMFORT INDICES:
+------------------------
+134. heat_index
+     - Transformation: Feels-like temperature in hot conditions
+     - Formula: temperature + 0.5555 * (RH/100 * 6.11 * exp(...) - 10)
+     - Condition: Only calculated if temperature > 27°C AND humidity > 40%
+     - Otherwise: Returns actual temperature
+     - Units: Degrees Celsius (°C)
+     - Purpose: Human comfort metric in hot weather
+
+135. wind_chill
+     - Transformation: Feels-like temperature in cold conditions
+     - Formula: 13.12 + 0.6215*T - 11.37*V^0.16 + 0.3965*T*V^0.16
+     - Condition: Only calculated if temperature < 10°C AND wind > 4.8 km/h
+     - Otherwise: Returns actual temperature
+     - Units: Degrees Celsius (°C)
+     - Purpose: Human comfort metric in cold weather
+
+136. comfort_index
+     - Transformation: Overall comfort index (0-100, higher is better)
+     - Formula: 100 - (|temp-20|*2 + |humidity-50|*0.5 + wind_penalty + precip_penalty)
+     - Penalties:
+       - Wind > 30 km/h: +20
+       - Precipitation > 0: +10
+     - Range: Clamped to [0, 100]
+     - Units: Index (0-100)
+     - Purpose: Overall human comfort metric
+
+137. temperature_humidity_index
+     - Transformation: Temperature-humidity index (THI)
+     - Formula: T - 0.55 * (1 - RH/100) * (T - 14.4)
+     - Units: Index (unitless)
+     - Purpose: Heat stress indicator
+
+================================================================================
+PART 7: ANOMALY DETECTION FEATURES (Applied to Hourly Aggregates)
+================================================================================
+
+PERCENTILE FEATURES:
+--------------------
+138. temp_p25
+     - Transformation: 25th percentile temperature for station
+     - Function: percentile_approx(avg_temperature_2m, 0.25) over station_window
+     - Window: Partitioned by station_id
+     - Units: Degrees Celsius (°C)
+     - Purpose: Lower quartile for anomaly detection
+
+139. temp_p75
+     - Transformation: 75th percentile temperature for station
+     - Function: percentile_approx(avg_temperature_2m, 0.75) over station_window
+     - Units: Degrees Celsius (°C)
+     - Purpose: Upper quartile for anomaly detection
+
+140. temp_p10
+     - Transformation: 10th percentile temperature for station
+     - Function: percentile_approx(avg_temperature_2m, 0.10) over station_window
+     - Units: Degrees Celsius (°C)
+     - Purpose: Lower decile for extreme anomaly detection
+
+141. temp_p90
+     - Transformation: 90th percentile temperature for station
+     - Function: percentile_approx(avg_temperature_2m, 0.90) over station_window
+     - Units: Degrees Celsius (°C)
+     - Purpose: Upper decile for extreme anomaly detection
+
+142. pressure_p25
+     - Transformation: 25th percentile pressure for station
+     - Function: percentile_approx(avg_pressure_msl, 0.25) over station_window
+     - Units: Hectopascals (hPa)
+
+143. pressure_p75
+     - Transformation: 75th percentile pressure for station
+     - Function: percentile_approx(avg_pressure_msl, 0.75) over station_window
+     - Units: Hectopascals (hPa)
+
+144. wind_p90
+     - Transformation: 90th percentile wind speed for station
+     - Function: percentile_approx(max_wind_speed_10m, 0.90) over station_window
+     - Units: Kilometers per hour (km/h)
+
+IQR FEATURES:
+-------------
+145. temp_iqr
+     - Transformation: Interquartile range for temperature
+     - Formula: temp_p75 - temp_p25
+     - Units: Degrees Celsius (°C)
+     - Purpose: Measure of temperature variability
+
+146. pressure_iqr
+     - Transformation: Interquartile range for pressure
+     - Formula: pressure_p75 - pressure_p25
+     - Units: Hectopascals (hPa)
+     - Purpose: Measure of pressure variability
+
+ANOMALY FLAGS:
+--------------
+147. temp_anomaly
+     - Transformation: Binary flag for temperature anomaly
+     - Logic: 1 if temperature outside 1.5*IQR range (outlier), else 0
+     - Formula: (temp < temp_p25 - 1.5*temp_iqr) OR (temp > temp_p75 + 1.5*temp_iqr)
+     - Units: Binary (0 or 1)
+     - Purpose: Identify statistical outliers
+
+148. pressure_anomaly
+     - Transformation: Binary flag for pressure anomaly
+     - Logic: 1 if pressure outside 1.5*IQR range, else 0
+     - Formula: (pressure < pressure_p25 - 1.5*pressure_iqr) OR 
+                (pressure > pressure_p75 + 1.5*pressure_iqr)
+     - Units: Binary (0 or 1)
+     - Purpose: Identify statistical outliers
+
+149. wind_anomaly
+     - Transformation: Binary flag for wind anomaly
+     - Logic: 1 if wind speed > 90th percentile, else 0
+     - Formula: max_wind_speed_10m > wind_p90
+     - Units: Binary (0 or 1)
+     - Purpose: Identify extreme wind events
+
+150. extreme_temp
+     - Transformation: Binary flag for extreme temperature
+     - Logic: 1 if temperature outside 10th-90th percentile range, else 0
+     - Formula: (temp < temp_p10) OR (temp > temp_p90)
+     - Units: Binary (0 or 1)
+     - Purpose: Identify extreme (but not necessarily anomalous) temperatures
+
+================================================================================
+OUTPUT STRUCTURE
+================================================================================
+
+Gold layer outputs three Parquet datasets:
+
+1. hourly_aggregates/
+   - Contains: All hourly aggregated metrics + time-series features + 
+               rolling windows + ML features + anomaly detection
+   - Partitioning: year, month
+   - Records: One per station per hour
+   - Fields: ~150 attributes
+
+2. daily_aggregates/
+   - Contains: All daily aggregated metrics + event flags
+   - Partitioning: year, month
+   - Records: One per station per day
+   - Fields: ~40 attributes
+
+3. monthly_aggregates/
+   - Contains: All monthly aggregated metrics
+   - Partitioning: year
+   - Records: One per station per month
+   - Fields: ~25 attributes
+
+================================================================================
+SUMMARY
+================================================================================
+
+Total Transformations:
+- Hourly Aggregates: ~150 attributes
+- Daily Aggregates: ~40 attributes
+- Monthly Aggregates: ~25 attributes
+
+Key Transformation Types:
+1. Statistical Aggregations (avg, min, max, stddev, sum, count)
+2. Time-Series Features (lag, lead, trends, change rates)
+3. Rolling Window Statistics (3h, 6h, 12h, 24h)
+4. ML Feature Engineering (cyclical encoding, comfort indices)
+5. Anomaly Detection (percentiles, IQR, anomaly flags)
+6. Event Detection (binary flags for extreme events)
+
+Output Format: Parquet files partitioned by time
+Output Location: {GOLD_OUTPUT_PATH}/hourly_aggregates, daily_aggregates, monthly_aggregates
+
+================================================================================
+
+
