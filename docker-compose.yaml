@@ -196,3 +196,10 @@ services:
       SPARK_WORKER_CORES: 1
       SPARK_WORKER_MEMORY: 1G
     command: /opt/spark/bin/spark-class org.apache.spark.deploy.worker.Worker spark://spark-master:7077
+
+volumes:
+  namenode_data:
+  datanode1_data:
+  datanode2_data:
+  datanode3_data:
+  cassandra_data:
