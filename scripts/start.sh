@@ -14,8 +14,8 @@ echo "=================================================="
 echo "[1/4] Starting Docker containers (Kafka, ZK, HDFS, Spark)..."
 docker-compose up -d
 
-echo "      Waiting 45 seconds for services to stabilize..."
-sleep 45
+echo "      Waiting 30 seconds for services to stabilize..."
+sleep 30
 
 # 2. Create Kafka Topic
 echo "[2/4] Creating Kafka topic 'weather-events'..."
@@ -37,6 +37,8 @@ docker cp src spark-master:/opt/spark/
 # This sends the job to the background so the script can continue.
 docker exec -d -u 0 spark-master /opt/spark/bin/spark-submit \
   --master spark://spark-master:7077 \
+  --conf spark.cores.max=1\
+  --conf spark.executor.memory=512m \
   --packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.0 \
   --py-files /opt/spark/src/streaming/schema.py \
   /opt/spark/src/streaming/weather_streaming.py
