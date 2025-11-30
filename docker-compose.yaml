@@ -91,6 +91,7 @@ services:
     environment:
       - CLUSTER_NAME=weather_cluster
       - CORE_CONF_fs_defaultFS=hdfs://namenode:9000
+      - HDFS_CONF_dfs_permissions_enabled=false
     healthcheck:
       interval: 5s
       retries: 20
@@ -172,7 +173,7 @@ services:
       - spark-master
     environment:
       SPARK_WORKER_CORES: 1
-      SPARK_WORKER_MEMORY: 1G
+      SPARK_WORKER_MEMORY: 2G
     command: /opt/spark/bin/spark-class org.apache.spark.deploy.worker.Worker spark://spark-master:7077
 
   spark-worker-2:
@@ -183,7 +184,7 @@ services:
       - spark-master
     environment:
       SPARK_WORKER_CORES: 1
-      SPARK_WORKER_MEMORY: 1G
+      SPARK_WORKER_MEMORY: 2G
     command: /opt/spark/bin/spark-class org.apache.spark.deploy.worker.Worker spark://spark-master:7077
 
   spark-worker-3:
@@ -194,7 +195,7 @@ services:
       - spark-master
     environment:
       SPARK_WORKER_CORES: 1
-      SPARK_WORKER_MEMORY: 1G
+      SPARK_WORKER_MEMORY: 2G
     command: /opt/spark/bin/spark-class org.apache.spark.deploy.worker.Worker spark://spark-master:7077
 
 volumes:

@@ -4,10 +4,6 @@ INPUT_FILE = '../../data/final/final_data.csv'
 CORRUPTION_PROBABILITY = 0.05
 DUPLICATE_PROBABILITY = 0.05
 NUMERIC_FIELDS = [
-    "latitude", 
-    "longitude", 
-    "elevation", 
-    "utc_offset_seconds",
     "temperature_2m", 
     "relative_humidity_2m", 
     "dew_point_2m", 
