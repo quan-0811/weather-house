@@ -7,14 +7,18 @@ parent_dir = os.path.dirname(current_dir)
 sys.path.append(parent_dir)
 
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import col, last, when, lit, coalesce
+from pyspark.sql.functions import (
+    col, last, first, when, lit, coalesce, unix_timestamp, 
+    sin, cos, atan2, radians, degrees
+)
 from pyspark.sql.window import Window
 from streaming.schema import weather_schema 
 
 def main():
     spark = SparkSession.builder \
-        .appName("Refined_BronzeToSilver") \
+        .appName("BronzeToSilver_Simplified") \
         .config("spark.hadoop.fs.defaultFS", "hdfs://namenode:9000") \
+        .config("spark.sql.shuffle.partitions", "4") \
         .getOrCreate()
     spark.sparkContext.setLogLevel("WARN")
 
@@ -23,110 +27,175 @@ def main():
         .schema(weather_schema) \
         .parquet("/weather/bronze")
 
-    # ====================================================
-    #      THE MICRO-BATCH LOGIC
-    # ====================================================
+    # --- CONFIGURATION: PHYSICAL LIMITS ---
+    PHYSICAL_LIMITS = [
+        ("temperature_2m", -95, 65),
+        ("relative_humidity_2m", 0, 105),
+        ("pressure_msl", 850, 1100),
+        ("surface_pressure", 500, 1100),
+        ("wind_speed_10m", 0, 450),
+        ("wind_speed_100m", 0, 450),
+        ("wind_gusts_10m", 0, 450),
+        ("wind_direction_10m", 0, 360),
+        ("wind_direction_100m", 0, 360),
+        ("cloud_cover", 0, 100),
+        ("cloud_cover_low", 0, 100),
+        ("cloud_cover_mid", 0, 100),
+        ("cloud_cover_high", 0, 100),
+        ("soil_temperature_0_to_7cm", -50, 75),
+        ("soil_temperature_7_to_28cm", -40, 60),
+        ("soil_temperature_28_to_100cm", -30, 50),
+        ("soil_temperature_100_to_255cm", -20, 40),
+        ("soil_moisture_0_to_7cm", -0.05, 1.05),
+        ("soil_moisture_7_to_28cm", -0.05, 1.05),
+        ("soil_moisture_28_to_100cm", -0.05, 1.05),
+        ("soil_moisture_100_to_255cm", -0.05, 1.05),
+        ("precipitation", 0, 400),
+        ("rain", 0, 400),
+        ("snowfall", 0, 500),
+        ("snow_depth", 0, 10000)
+    ]
+
     def process_and_split(batch_df, batch_id):
-        print(f"--- Processing Batch {batch_id}: {batch_df.count()} rows ---")
-        
-        if batch_df.count() == 0:
+        # Optimization: Check if batch is empty immediately
+        if batch_df.isEmpty():
             return
 
-        # Cache the raw batch because we will read it multiple times
+        print(f"--- Processing Batch {batch_id} ---")
         batch_df.cache()
 
         # -----------------------------------------------
-        # STEP A: IMPUTATION (Fill Forward)
+        # STEP 1: DEDUPLICATE & NULLIFY OUTLIERS
         # -----------------------------------------------
-        # "If temp is null, use the temp from the previous event"
-        w_ff = Window.partitionBy("location_id").orderBy("event_time")
-
-        # We create 'temp_clean' etc. using the last non-null value
-        imputed_df = batch_df \
-            .withColumn("temp_clean", last("temp_2m_c", ignorenulls=True).over(w_ff)) \
-            .withColumn("humidity_clean", last("rel_humidity_2m_pct", ignorenulls=True).over(w_ff)) \
-            .withColumn("rain_clean", coalesce(col("rain_mm"), lit(0.0))) # Assume 0 rain if null
-
-        # -----------------------------------------------
-        # STEP B: QUALITY TAGGING (Physics Checks)
-        # -----------------------------------------------
-        # We don't drop bad data, we label it 'ERR' or 'OK'
+        # We do this in one pass to avoid multiple cache updates
+        cleaned_df = batch_df.dropDuplicates(["location_id", "time"])
         
-        # 1. Check for Critical Nulls (Data we can't save)
-        #    If Location or Time is missing, we can't query it. Drop these.
-        base_df = imputed_df \
-            .filter(col("location_id").isNotNull()) \
-            .filter(col("event_time").isNotNull())
+        # Apply Nullification Loop (Very fast, map-only operation)
+        for col_name, min_val, max_val in PHYSICAL_LIMITS:
+            if col_name in cleaned_df.columns:
+                cleaned_df = cleaned_df.withColumn(col_name, 
+                    when(
+                        (col(col_name) < min_val) | (col(col_name) > max_val), 
+                        lit(None)
+                    ).otherwise(col(col_name))
+                )
 
-        # 2. Check for Physics Errors (Data we save but flag)
-        quality_df = base_df.withColumn("data_quality", 
-            when(
-                (col("temp_clean") > 60) | (col("temp_clean") < -60), 
-                lit("ERR_TEMP_RANGE")
-            ).when(
-                (col("rain_clean") < 0), 
-                lit("ERR_NEG_RAIN")
-            ).when(
-                col("temp_clean").isNull(),
-                lit("ERR_MISSING_DATA") # If imputation failed (first row is null)
-            ).otherwise(lit("OK"))
+        # -----------------------------------------------
+        # STEP 2: TEMPORAL IMPUTATION (Unified)
+        # -----------------------------------------------
+        # Prepare Time Columns
+        df_with_ts = cleaned_df.withColumn("event_ts", col("time").cast("timestamp")) \
+                               .withColumn("event_unix", unix_timestamp("event_ts")) \
+                               .withColumn("imputed_flag", lit(False))
+
+        # Define ONE Window for everything (Reduces Shuffles)
+        w = Window.partitionBy("location_id").orderBy("event_ts")
+        w_future = w.rowsBetween(0, Window.unboundedFollowing)
+        
+        # List of columns that behave linearly (Precipitation is now here too)
+        linear_cols = [
+            "temperature_2m", "dew_point_2m", "apparent_temperature",
+            "relative_humidity_2m", "pressure_msl", "surface_pressure",
+            "cloud_cover", "cloud_cover_low", "cloud_cover_mid", "cloud_cover_high",
+            "wind_speed_10m", "wind_speed_100m", "wind_gusts_10m",
+            "soil_temperature_0_to_7cm", "soil_temperature_7_to_28cm", 
+            "soil_temperature_28_to_100cm", "soil_temperature_100_to_255cm",
+            "soil_moisture_0_to_7cm", "soil_moisture_7_to_28cm", 
+            "soil_moisture_28_to_100cm", "soil_moisture_100_to_255cm",
+            "precipitation", "rain", "snowfall", "snow_depth"
+        ]
+
+        # [Logic: Universal Linear Interpolation]
+        # We calculate Forward Fill and Backward Fill for ALL linear columns
+        for c in linear_cols:
+            ff_val = last(col(c), ignorenulls=True).over(w)
+            bf_val = first(col(c), ignorenulls=True).over(w_future)
+            
+            # Times for weighting
+            ff_time = last(when(col(c).isNotNull(), col("event_unix")), ignorenulls=True).over(w)
+            bf_time = first(when(col(c).isNotNull(), col("event_unix")), ignorenulls=True).over(w_future)
+
+            # Interpolate
+            interpolated = when(col(c).isNotNull(), col(c)) \
+                .otherwise(
+                    when(ff_val.isNotNull() & bf_val.isNotNull() & (ff_time != bf_time),
+                         ff_val + (col("event_unix") - ff_time) * (bf_val - ff_val) / (bf_time - ff_time)
+                    ).otherwise(coalesce(ff_val, bf_val))
+                )
+            
+            # Apply and Flag
+            df_with_ts = df_with_ts.withColumn("imputed_flag", 
+                when(col(c).isNull() & interpolated.isNotNull(), lit(True))
+                .otherwise(col("imputed_flag"))
+            ).withColumn(c, interpolated)
+
+        # [Logic: Circular Interpolation for Wind Direction]
+        for dir_col in ["wind_direction_10m", "wind_direction_100m"]:
+            dir_was_null = col(dir_col).isNull()
+            
+            # Decompose to Vectors
+            df_with_ts = df_with_ts.withColumn(f"{dir_col}_rad", radians(col(dir_col))) \
+                                   .withColumn(f"{dir_col}_x", cos(col(f"{dir_col}_rad"))) \
+                                   .withColumn(f"{dir_col}_y", sin(col(f"{dir_col}_rad")))
+
+            # Interpolate Vectors
+            for component in ["_x", "_y"]:
+                comp_col = f"{dir_col}{component}"
+                ff_val = last(col(comp_col), ignorenulls=True).over(w)
+                bf_val = first(col(comp_col), ignorenulls=True).over(w_future)
+                
+                # Simple Coalesce/Average for vectors is usually sufficient for stability
+                interpolated = coalesce(col(comp_col), ff_val, bf_val, lit(0.0))
+                df_with_ts = df_with_ts.withColumn(comp_col, interpolated)
+
+            # Recompose
+            df_with_ts = df_with_ts.withColumn(dir_col, 
+                (degrees(atan2(col(f"{dir_col}_y"), col(f"{dir_col}_x"))) + 360) % 360
+            )
+            
+            df_with_ts = df_with_ts.withColumn("imputed_flag",
+                when(dir_was_null & col(dir_col).isNotNull(), lit(True))
+                .otherwise(col("imputed_flag"))
+            ).drop(f"{dir_col}_rad", f"{dir_col}_x", f"{dir_col}_y")
+
+        # -----------------------------------------------
+        # STEP 3: SPLIT AND WRITE
+        # -----------------------------------------------
+        final_df = df_with_ts.withColumn("data_quality", 
+            when(col("imputed_flag"), lit("IMPUTED")).otherwise(lit("OK"))
         )
 
-        # -----------------------------------------------
-        # STEP C: DEDUPLICATION
-        # -----------------------------------------------
-        # If ID and Time are identical, keep the first one
-        deduped_df = quality_df.dropDuplicates(["location_id", "event_time"])
-
-        # -----------------------------------------------
-        # STEP D: SPLIT TO STAR SCHEMA
-        # -----------------------------------------------
-
-        # --- TABLE 1: DIMENSION (Context) ---
-        # Extract unique static attributes
-        dim_df = deduped_df.select(
-            "location_id", 
-            "latitude", 
-            "longitude", 
-            "elevation", 
-            "timezone", 
-            "timezone_abbr"
+        # --- Write Dimension ---
+        dim_df = final_df.select(
+            "location_id", "latitude", "longitude", "elevation", "timezone", "timezone_abbreviation"
         ).distinct()
+        dim_df.write.mode("append").parquet("/weather/silver/dim_location")
+        print(f" -> Updated Dimensions")
 
-        dim_df.write \
-            .mode("append") \
-            .parquet("/silver/dim_location")
+        # --- Write Fact ---
+        fact_cols = [
+            "location_id", col("time").alias("event_time"),
+            "temperature_2m", "relative_humidity_2m", "dew_point_2m", "apparent_temperature",
+            "precipitation", "rain", "snowfall", "snow_depth", "weather_code",
+            "pressure_msl", "surface_pressure",
+            "cloud_cover", "cloud_cover_low", "cloud_cover_mid", "cloud_cover_high",
+            "wind_speed_10m", "wind_speed_100m", "wind_direction_10m", "wind_direction_100m", "wind_gusts_10m",
+            "soil_temperature_0_to_7cm", "soil_temperature_7_to_28cm", 
+            "soil_temperature_28_to_100cm", "soil_temperature_100_to_255cm",
+            "soil_moisture_0_to_7cm", "soil_moisture_7_to_28cm", 
+            "soil_moisture_28_to_100cm", "soil_moisture_100_to_255cm",
+            "data_quality"
+        ]
         
-        print(f" -> Updated Dimensions ({dim_df.count()} rows)")
-
-        # --- TABLE 2: FACT (Measurements) ---
-        # Keep only measurements + Foreign Key + Quality Flag
-        fact_df = deduped_df.select(
-            "location_id", 
-            "event_time", 
-            "temp_clean", 
-            "humidity_clean", 
-            "rain_clean", 
-            "wind_speed_10m_kmh", 
-            "wind_dir_10m_deg",
-            "data_quality"  # Critical for Gold filtering
-        )
-
-        fact_df.write \
-            .mode("append") \
-            .partitionBy("location_id") \
-            .parquet("/silver/fact_weather")
-        
-        print(f" -> Updated Facts ({fact_df.count()} rows)")
+        fact_df = final_df.select(*fact_cols)
+        fact_df.write.mode("append").partitionBy("location_id").parquet("/weather/silver/fact_weather")
+        print(f" -> Updated Facts")
         
         batch_df.unpersist()
 
-    # ====================================================
-    #      EXECUTION
-    # ====================================================
     query = bronze_df.writeStream \
         .foreachBatch(process_and_split) \
-        .option("checkpointLocation", "/checkpoints/silver_star_schema") \
+        .option("checkpointLocation", "/checkpoints/silver_simplified") \
         .trigger(availableNow=True) \
         .start()
 
