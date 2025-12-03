@@ -195,7 +195,7 @@ def main():
 
     query = bronze_df.writeStream \
         .foreachBatch(process_and_split) \
-        .option("checkpointLocation", "/checkpoints/silver_simplified") \
+        .option("checkpointLocation", "/weather/checkpoints/silver_simplified") \
         .trigger(availableNow=True) \
         .start()
 
