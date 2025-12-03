@@ -45,7 +45,7 @@ def main():
     # 4. Start Streaming Query
     query = clean_df.writeStream \
         .foreachBatch(process_batch) \
-        .option("checkpointLocation", "hdfs://namenode:9000/weather/checkpoints") \
+        .option("checkpointLocation", "hdfs://namenode:9000/weather/checkpoints/streaming") \
         .trigger(processingTime="10 seconds") \
         .start()
 
