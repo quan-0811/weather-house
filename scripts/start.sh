@@ -30,9 +30,6 @@ docker exec kafka1 kafka-topics --create --if-not-exists \
 # 3. Submit Spark Streaming Job
 echo "[3/4] Deploying code and submitting Spark Streaming job..."
 
-# Copy the local 'src' folder into the spark-master container
-docker cp src spark-master:/opt/spark/
-
 # FIX: Use '-d' (Detached) instead of '-it' (Interactive).
 # This sends the job to the background so the script can continue.
 docker exec -d -u 0 spark-master /opt/spark/bin/spark-submit \
