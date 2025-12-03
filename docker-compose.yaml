@@ -163,6 +163,8 @@ services:
     ports:
       - "8081:8080" # Spark Master UI
       - "7077:7077"
+    volumes:
+      - ./src:/opt/spark/src
     command: /opt/spark/bin/spark-class org.apache.spark.deploy.master.Master
 
   spark-worker-1:
@@ -171,9 +173,11 @@ services:
     hostname: spark-worker-1
     depends_on:
       - spark-master
+    volumes:
+      - ./src:/opt/spark/src
     environment:
       SPARK_WORKER_CORES: 1
-      SPARK_WORKER_MEMORY: 2G
+      SPARK_WORKER_MEMORY: 1G
     command: /opt/spark/bin/spark-class org.apache.spark.deploy.worker.Worker spark://spark-master:7077
 
   spark-worker-2:
@@ -182,9 +186,11 @@ services:
     hostname: spark-worker-2
     depends_on:
       - spark-master
+    volumes:
+      - ./src:/opt/spark/src
     environment:
       SPARK_WORKER_CORES: 1
-      SPARK_WORKER_MEMORY: 2G
+      SPARK_WORKER_MEMORY: 1G
     command: /opt/spark/bin/spark-class org.apache.spark.deploy.worker.Worker spark://spark-master:7077
 
   spark-worker-3:
@@ -193,9 +199,11 @@ services:
     hostname: spark-worker-3
     depends_on:
       - spark-master
+    volumes:
+      - ./src:/opt/spark/src
     environment:
       SPARK_WORKER_CORES: 1
-      SPARK_WORKER_MEMORY: 2G
+      SPARK_WORKER_MEMORY: 1G
     command: /opt/spark/bin/spark-class org.apache.spark.deploy.worker.Worker spark://spark-master:7077
 
 volumes:
@@ -204,3 +212,5 @@ volumes:
   datanode2_data:
   datanode3_data:
   cassandra_data:
+  postgres_data:
+  airflow_logs:
