@@ -1,0 +1,7 @@
+streamlit
+pandas
+plotly
+cassandra-driver
+pyarrow
+fsspec
+requests
