@@ -9,7 +9,7 @@ def get_corrupted_payload(row):
     row = row.copy()
     raw_json = json.dumps(row)
     
-    corruption_type = random.choice(['schema_mismatch', 'outlier', 'nulls'])
+    corruption_type = random.choice(['outlier', 'nulls'])
 
     if corruption_type == 'schema_mismatch':
         field_to_corrupt = random.choice(NUMERIC_FIELDS)

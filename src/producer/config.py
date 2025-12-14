@@ -1,8 +1,10 @@
 KAFKA_BROKERS = ['localhost:9092', 'localhost:9093', 'localhost:9094']
 TOPIC_NAME = 'weather-events'
+NUM_PARTITIONS = 3
+REPLICATION_FACTOR = 3
 INPUT_FILE = '../../data/final/final_data.csv'
-CORRUPTION_PROBABILITY = 0.05
-DUPLICATE_PROBABILITY = 0.05
+CORRUPTION_PROBABILITY = 0.01
+DUPLICATE_PROBABILITY = 0.01
 NUMERIC_FIELDS = [
     "temperature_2m", 
     "relative_humidity_2m", 
