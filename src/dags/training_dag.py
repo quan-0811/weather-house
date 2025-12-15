@@ -13,16 +13,13 @@ default_args = {
 with DAG(
     'weather_model_training',
     default_args=default_args,
-    description='Retrains the Weather Forecast Model (Weekly)',
-    schedule_interval='@daily',  # Runs once a day
+    description='Retrains the Weather Forecast Model (Daily)',
+    schedule_interval='@daily', 
     start_date=datetime(2023, 11, 30),
     catchup=False,
     tags=['spark', 'mlops', 'training'],
 ) as dag:
 
-    # --- TASK: MODEL TRAINING ---
-    # Re-trains the model using the accumulated Gold data
-    # We give it more memory (1GB) because training requires loading data into RAM
     train_model = BashOperator(
         task_id='train_model',
         bash_command="""

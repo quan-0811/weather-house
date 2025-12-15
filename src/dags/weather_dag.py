@@ -14,8 +14,6 @@ with DAG(
     'weather_etl_pipeline',
     default_args=default_args,
     description='Periodic Weather ETL (Bronze -> Silver -> Gold -> Forecast)',
-    # Run every 20 mins. 
-    # Logic: At 1 record/sec, 19.2 real mins = 1 simulated day (24h) of data.
     schedule_interval='*/20 * * * *',
     start_date=datetime(2023, 11, 30),
     catchup=False,
@@ -23,7 +21,6 @@ with DAG(
 ) as dag:
 
     # 1. SILVER JOB
-    # Cleans raw data and performs temporal imputation
     silver_transformation = BashOperator(
         task_id='transform_silver',
         bash_command="""
@@ -39,7 +36,6 @@ with DAG(
     )
 
     # 2. GOLD JOB
-    # Aggregates data for dashboards (Daily/Weekly) and ML features
     gold_aggregation = BashOperator(
         task_id='aggregate_gold',
         bash_command="""
@@ -54,7 +50,6 @@ with DAG(
     )
 
     # 3. PREDICTION JOB
-    # Generates tomorrow's forecast using the latest Cassandra data + ML models
     predict_weather = BashOperator(
         task_id='predict_weather',
         bash_command="""
@@ -70,5 +65,4 @@ with DAG(
         """
     )
 
-    # Execution Order: Silver -> Gold -> Predict
     silver_transformation >> gold_aggregation >> predict_weather
