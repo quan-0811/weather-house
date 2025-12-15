@@ -256,6 +256,20 @@ services:
       timeout: 10s
       retries: 5
 
+  dashboard:
+    build: src/dashboard
+    container_name: weather_dashboard
+    ports:
+      - "8501:8501"
+    depends_on:
+      - cassandra
+      - namenode
+    volumes:
+      - ./src/dashboard:/app
+      - namenode_data:/opt/data/hadoop/dfs/name
+    environment:
+      - CASSANDRA_HOST=cassandra
+
 volumes:
   namenode_data:
   datanode1_data:
