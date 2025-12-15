@@ -16,7 +16,7 @@ from streaming.schema import weather_schema
 
 def main():
     spark = SparkSession.builder \
-        .appName("BronzeToSilver_Simplified") \
+        .appName("BronzeToSilver") \
         .config("spark.hadoop.fs.defaultFS", "hdfs://namenode:9000") \
         .config("spark.sql.shuffle.partitions", "4") \
         .getOrCreate()
