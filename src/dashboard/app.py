@@ -3,6 +3,7 @@ import pandas as pd
 from cassandra.cluster import Cluster
 import plotly.express as px
 import time
+from datetime import datetime, timedelta  # <--- Added for Partition Key Logic
 
 # Page Config
 st.set_page_config(
@@ -53,7 +54,7 @@ def load_station_metadata():
     """
     Hybrid Loading Strategy:
     1. Try HDFS Silver Layer (Best source, deduped).
-    2. Fallback to Cassandra (Immediate source) if Silver is empty.
+    2. Fallback to Cassandra 'location_meta_data' (Immediate source).
     """
     df = load_parquet("silver", "dim_location")
     if not df.empty:
@@ -62,7 +63,8 @@ def load_station_metadata():
     session = get_cassandra_session()
     if session:
         try:
-            cql = "SELECT location_id, latitude, longitude, timezone, elevation FROM raw_weather_data PER PARTITION LIMIT 1"
+            # --- MODIFIED: Query the dedicated metadata table ---
+            cql = "SELECT location_id, latitude, longitude, timezone, elevation FROM location_meta_data"
             rows = session.execute(cql)
             df_speed = pd.DataFrame(list(rows))
             
@@ -134,14 +136,16 @@ with tab1:
                 col_str = ", ".join(cols)
 
                 if station_id:
-                    cql = f"SELECT {col_str} FROM raw_weather_data WHERE location_id = {station_id} LIMIT 100"
+                    cql = f"SELECT {col_str} FROM raw_weather_data WHERE location_id = {station_id} LIMIT 200"
                     title_suffix = f"(Station {station_id})"
+                    
                 else:
+                    # Fallback for "All Stations" (Note: This scans random partitions in the new schema)
                     cql = f"SELECT {col_str} FROM raw_weather_data LIMIT 200"
                     title_suffix = "(All Stations)"
-
-                rows = session.execute(cql)
-                df_speed = pd.DataFrame(list(rows))
+                
+                rows = list(session.execute(cql))
+                df_speed = pd.DataFrame(rows)
                 
                 if not df_speed.empty:
                     df_speed['time'] = pd.to_datetime(df_speed['time'])
