@@ -6,6 +6,16 @@ from pyspark.sql.functions import (
 from pyspark.sql.window import Window
 from schema import weather_schema
 
+# Columns that belong to the static metadata table
+META_COLS = [
+    "location_id", 
+    "latitude", 
+    "longitude", 
+    "elevation", 
+    "utc_offset_seconds", 
+    "timezone", 
+    "timezone_abbreviation"
+]
 
 PHYSICAL_LIMITS = [
     # Atmospheric
@@ -66,14 +76,17 @@ def process_batch(batch_df, batch_id):
     print(f"Processing Batch ID: {batch_id} with {batch_df.count()} records")
     batch_df.cache()
     
+    # 1. COLD PATH: Archive Raw Data to HDFS (Bronze Layer)
     print(" -> Writing to HDFS (Raw)...")
     batch_df.write \
         .mode("append") \
         .partitionBy("location_id") \
         .parquet("hdfs://namenode:9000/weather/bronze")
 
+    # 2. HOT PATH TRANSFORMATION: Cleaning & Imputation
     processing_df = batch_df.dropDuplicates(["location_id", "time"])
 
+    # Nullify Outliers
     for col_name, min_val, max_val in PHYSICAL_LIMITS:
         if col_name in processing_df.columns:
             processing_df = processing_df.withColumn(col_name, 
@@ -83,6 +96,7 @@ def process_batch(batch_df, batch_id):
                 ).otherwise(col(col_name))
             )
 
+    # Apply LOCF (Last Observation Carried Forward)
     w = Window.partitionBy("location_id").orderBy("time")
     
     imputed_df = processing_df.withColumn("data_quality", lit("OK"))
@@ -91,22 +105,39 @@ def process_batch(batch_df, batch_id):
         if col_name in imputed_df.columns:
             last_val = last(col(col_name), ignorenulls=True).over(w)
             
+            # Update quality flag if we are about to impute
             imputed_df = imputed_df.withColumn("data_quality",
                 when(col(col_name).isNull() & last_val.isNotNull(), lit("IMPUTED"))
                 .otherwise(col("data_quality"))
             )
             
+            # Fill the null
             imputed_df = imputed_df.withColumn(col_name, coalesce(col(col_name), last_val))
 
-    print(" -> Writing to Cassandra (Cleaned + Flagged)...")
+    # 3. HOT PATH WRITE: Cassandra (Serving Layer)
+    print(" -> Writing to Cassandra...")
     try:
-        cassandra_df = imputed_df.withColumn("time", to_timestamp(col("time")))
+        cassandra_prep_df = imputed_df.withColumn("time", to_timestamp(col("time")))
+
+        # --- Write 1: Static Metadata (Normalized Table) ---
+        meta_df = cassandra_prep_df.select(*META_COLS).distinct()
         
-        cassandra_df.write \
+        meta_df.write \
+            .format("org.apache.spark.sql.cassandra") \
+            .options(table="location_meta_data", keyspace="weather_house") \
+            .mode("append") \
+            .save()
+
+        # --- Write 2: Time-Series Metrics (Simplified Table) ---
+        cols_to_drop = [c for c in META_COLS if c != "location_id"]
+        ts_df = cassandra_prep_df.drop(*cols_to_drop)
+
+        ts_df.write \
             .format("org.apache.spark.sql.cassandra") \
             .options(table="raw_weather_data", keyspace="weather_house") \
             .mode("append") \
             .save()
+            
     except Exception as e:
         print(f"Cassandra Error: {e}")
             
@@ -116,6 +147,7 @@ def main():
     spark = get_spark_session()
     spark.sparkContext.setLogLevel("WARN")
 
+    # Read from Kafka
     kafka_df = spark.readStream \
         .format("kafka") \
         .option("kafka.bootstrap.servers", "kafka1:29092,kafka2:29092,kafka3:29092") \
@@ -123,10 +155,12 @@ def main():
         .option("startingOffsets", "earliest") \
         .load()
 
+    # Parse JSON
     raw_parsed_df = kafka_df.select(
         from_json(col("value").cast("string"), weather_schema).alias("data")
     ).select("data.*")
 
+    # Start Stream
     query = raw_parsed_df.writeStream \
         .foreachBatch(process_batch) \
         .option("checkpointLocation", "hdfs://namenode:9000/weather/checkpoints/streaming") \
