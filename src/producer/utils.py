@@ -9,7 +9,7 @@ def get_corrupted_payload(row):
     row = row.copy()
     raw_json = json.dumps(row)
     
-    corruption_type = random.choice(['outlier', 'nulls'])
+    corruption_type = random.choice(['schema_mismatch', 'outlier', 'nulls'])
 
     if corruption_type == 'schema_mismatch':
         field_to_corrupt = random.choice(NUMERIC_FIELDS)
@@ -30,10 +30,10 @@ def get_corrupted_payload(row):
         return raw_json[:-5], "Malformed JSON (Truncated)"
         
     elif corruption_type == 'nulls':
-        valid_keys = [k for k in row.keys() if k != 'location_id']
+        valid_keys = set(NUMERIC_FIELDS).intersection(row.keys())
         
         if valid_keys:
-            key_to_null = random.choice(valid_keys)
+            key_to_null = random.choice(list(valid_keys))
             row[key_to_null] = None
             return json.dumps(row), f"Missing Field ({key_to_null})"
 
