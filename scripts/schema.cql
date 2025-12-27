@@ -1,28 +1,27 @@
 -- 1. Create Keyspace
--- 'SimpleStrategy' is suitable for a single-datacenter/local setup.
-CREATE KEYSPACE IF NOT EXISTS weather_house 
-WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };
+CREATE KEYSPACE IF NOT EXISTS weather_house
+WITH REPLICATION = { 'class': 'SimpleStrategy', 'replication_factor': 1 };
 
--- 2. Use the Keyspace
 USE weather_house;
 
--- 3. Create Table
--- Data types map to PySpark: LongType->bigint, DoubleType->double, StringType->text
-CREATE TABLE IF NOT EXISTS raw_weather_data (
-    -- Primary Key: Partition by Location, Cluster by Time (descending) for fast dashboards
-    location_id bigint,
-    time timestamp,
-
-    -- Quality Flag (Added for visualization)
-    data_quality text,
-
-    -- Metadata
+-- 2. Metadata Table (Static Data)
+CREATE TABLE IF NOT EXISTS location_meta_data (
+    location_id bigint PRIMARY KEY,
     latitude double,
     longitude double,
     elevation double,
     utc_offset_seconds bigint,
     timezone text,
-    timezone_abbreviation text,
+    timezone_abbreviation text
+);
+
+-- 3. Time-Series Table (Metric Data)
+CREATE TABLE IF NOT EXISTS raw_weather_data (
+    location_id bigint,
+    time timestamp,
+
+    -- Quality Flag
+    data_quality text,
 
     -- Atmospheric Metrics
     temperature_2m double,
@@ -62,5 +61,7 @@ CREATE TABLE IF NOT EXISTS raw_weather_data (
     soil_moisture_28_to_100cm double,
     soil_moisture_100_to_255cm double,
 
+    -- Primary Key Definition
     PRIMARY KEY (location_id, time)
 ) WITH CLUSTERING ORDER BY (time DESC);
+    AND default_time_to_live = 1296000;
