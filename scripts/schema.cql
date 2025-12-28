@@ -63,5 +63,5 @@ CREATE TABLE IF NOT EXISTS raw_weather_data (
 
     -- Primary Key Definition
     PRIMARY KEY (location_id, time)
-) WITH CLUSTERING ORDER BY (time DESC);
+) WITH CLUSTERING ORDER BY (time DESC)
     AND default_time_to_live = 1296000;
