@@ -59,10 +59,8 @@ with DAG(
         --conf spark.cores.max=1 \
         --conf spark.executor.memory=1024m \
         --conf spark.driver.memory=512m \
-        --packages com.datastax.spark:spark-cassandra-connector_2.12:3.5.0 \
-        --conf spark.cassandra.connection.host=cassandra \
         /opt/spark/src/ml/predict_weather.py
         """
     )
-
+    
     silver_transformation >> gold_aggregation >> predict_weather
