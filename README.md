@@ -30,7 +30,7 @@ The system follows the **Kappa Architecture**, utilizing a unified log-based str
 
 Before running the project, ensure you have the following installed:
 
-* **Docker Desktop** (configured with at least 16GB RAM recommended)
+* **Docker Desktop** (configured with at least 16GB RAM free recommended)
 * **Conda** (Anaconda or Miniconda)
 * **Git**
 
